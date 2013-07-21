@@ -24,13 +24,13 @@
 # 
 # Process this file with autoconf to produce a configure script.
 
-AC_PREREQ(2.69)
+AC_PREREQ([2.69])
 
 AC_INIT([bbdb],[3.02.2013.07.18],[bbdb-info@lists.sourceforge.net],[],[http://savannah.nongnu.org/projects/bbdb/])
 AC_CONFIG_SRCDIR([lisp/bbdb.el])
 AC_CONFIG_MACRO_DIR([m4])
 # We need GNU Automake 1.13 for AM_ELCFLAGS.
-AM_INIT_AUTOMAKE([1.13])
+AM_INIT_AUTOMAKE([1.13 -Wall gnu])
 
 # Checks for programs.
 AC_PROG_INSTALL
