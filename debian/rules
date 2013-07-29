@@ -5,10 +5,9 @@
 %:
 	dh $@ --with autoreconf --parallel
 
-
-# should include but it stopped working: --without-vm-dir
 override_dh_auto_configure:
 	dh_auto_configure -- \
+		--without-vm-dir \
 		--docdir='$${datarootdir}/doc/bbdb3' \
 		--with-lispdir='$${datadir}/emacs/site-lisp/bbdb3'
 
@@ -25,6 +24,8 @@ override_dh_auto_install:
 	-rm --verbose debian/bbdb3/usr/share/doc/bbdb3/bbdb.pdf
 	@echo dh_installchangelog installs this later with standard name
 	-rm --verbose debian/bbdb3/usr/share/doc/bbdb3/ChangeLog
-	@echo installation instructions are not needed
-	-rm --verbose debian/bbdb3/usr/share/doc/bbdb3/INSTALL
-	-rm --verbose debian/bbdb3/usr/share/doc/bbdb3/README-INSTALL
+	@echo copy of GPLv3 is not needed due to pointer in .../copyright
+	-rm --verbose debian/bbdb3/usr/share/doc/bbdb3/COPYING
+
+override_dh_installchangelogs:
+	dh_installchangelogs ChangeLog
