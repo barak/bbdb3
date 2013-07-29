@@ -4,7 +4,7 @@
 # Author:        Didier Verna <didier@xemacs.org>
 # Maintainer:    Roland Winkler <winkler@gnu.org>
 # Created:       Tue Nov 14 18:28:52 2000
-# Last Revision: $Date: 2013/07/18 13:32:50 $
+# Last Revision: $Date: 2013/07/21 22:56:39 $
 # 
 # Copyright (C) 2000-2001 Didier Verna <didier@xemacs.org>
 # Copyright (C) 2011-2013 Roland Winkler <winkler@gnu.org>
@@ -26,11 +26,13 @@
 
 AC_PREREQ([2.69])
 
-AC_INIT([bbdb],[3.02.2013.07.18],[bbdb-info@lists.sourceforge.net],[],[http://savannah.nongnu.org/projects/bbdb/])
+AC_INIT([bbdb],[3.02],[bbdb-info@lists.sourceforge.net],[],[http://savannah.nongnu.org/projects/bbdb/]) 
 AC_CONFIG_SRCDIR([lisp/bbdb.el])
 AC_CONFIG_MACRO_DIR([m4])
 # We need GNU Automake 1.13 for AM_ELCFLAGS.
 AM_INIT_AUTOMAKE([1.13 -Wall gnu])
+
+AC_PACKAGE_DATE
 
 # Checks for programs.
 AC_PROG_INSTALL
@@ -40,12 +42,12 @@ AM_PATH_LISPDIR
 AS_IF([test "$EMACS" = no], [AC_MSG_ERROR([cannot find Emacs])])
 
 # Checks for libraries.
-BBDB_WITH_VM
-AM_CONDITIONAL([VM], [test x$VMDIR != x])
+EMACS_VM
+AC_SUBST([AM_ELCFLAGS])
 
 AC_CONFIG_FILES([Makefile
                  lisp/Makefile
-                 lisp/bbdb-version.el
+                 lisp/bbdb-site.el
                  doc/Makefile
                  tex/Makefile])
 
