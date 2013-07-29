@@ -13,5 +13,5 @@ Makefile.in
 /doc/texinfo.tex
 /install-sh
 /INSTALL
-/lisp/bbdb-version.el
+/lisp/bbdb-site.el
 /missing

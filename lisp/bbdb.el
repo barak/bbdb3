@@ -34,7 +34,7 @@
 ;;;  -----------------------------------------------------------------------
 
 (require 'timezone)
-(require 'bbdb-version)
+(require 'bbdb-site)
 
 ;; When running BBDB, we have (require 'bbdb-autoloads)
 (eval-when-compile              ; pacify the compiler.
@@ -2734,7 +2734,6 @@ Do this only if `bbdb-check-postcode' is non-nil."
 
 ;;; Reading and Writing the BBDB
 
-;;;###autoload
 (defun bbdb-buffer ()
   "Return buffer that visits the BBDB file `bbdb-file'.
 If `bbdb-file-remote' is non-nil and it is newer than `bbdb-file',
@@ -4116,8 +4115,8 @@ If NOISY is non-nil as in interactive calls issue status messages."
   "Return string describing the version of BBDB.
 With prefix ARG, insert string at point."
   (interactive (list (or (and current-prefix-arg 1) t)))
-  (let ((version-string (format "BBDB version %s"
-                                bbdb-version)))
+  (let ((version-string (format "BBDB version %s (%s)"
+                                bbdb-version bbdb-version-date)))
     (cond ((numberp arg) (insert (message version-string)))
           ((eq t arg) (message version-string))
           (t version-string))))
