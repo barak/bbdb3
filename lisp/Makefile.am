@@ -37,6 +37,7 @@ dist_lisp_LISP = 				\
 	bbdb-site.el
 
 dist_lisp_LISP += bbdb-uuid.el
+lisp_LISP = bbdb-print-tex-path.el
 
 if VM
 dist_lisp_LISP += bbdb-vm.el
@@ -46,7 +47,7 @@ endif
 
 lisp_DATA = bbdb-loaddefs.el
 
-MOSTLYCLEANFILES = bbdb-loaddefs.el
+MOSTLYCLEANFILES = bbdb-loaddefs.el bbdb-site.el
 
 bbdb-loaddefs.el: $(dist_lisp_LISP)
 #	2011-12-11: We switched from bbdb-autoloads.el to bbdb-loaddefs.el.
@@ -69,3 +70,12 @@ bbdb-loaddefs.el: $(dist_lisp_LISP)
 		--eval '(setq generated-autoload-file "'$(abs_builddir)/$@'")' \
 		--eval '(setq make-backup-files nil)' \
 		-f batch-update-autoloads $(srcdir)
+
+# The true pkgdatadir can only be generated at "make" time.
+# So we put it in its own file, created here, and loaded by bbdb-site.
+bbdb-print-tex-path.el:
+	@echo >  $@ "(defcustom bbdb-print-tex-path '(\"$(pkgdatadir)\")"
+	@echo >> $@ "  \"List of directories with the BBDB tex files.\""
+	@echo >> $@ "  :group 'bbdb-utilities-print"
+	@echo >> $@ "  :type '(repeat (directory :tag \"Directory\")))"
+	@echo >> $@ "(provide 'bbdb-print-tex-path)"
