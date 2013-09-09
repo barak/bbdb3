@@ -3,7 +3,7 @@ Section: mail
 Priority: optional
 Maintainer: Barak A. Pearlmutter <bap@debian.org>
 Build-Depends: debhelper (>= 9),
-	       dh-autoreconf, automake (>= 1.13),
+	       dh-autoreconf, automake (>= 1:1.13),
 	       texinfo,
 	       emacs | emacs24-nox | emacs24 | emacs23-nox | emacs23
 Standards-Version: 3.9.4
