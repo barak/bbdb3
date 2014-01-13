@@ -1,6 +1,6 @@
 ;;; bbdb-anniv.el --- get anniversaries from BBDB
 
-;; Copyright (C) 2011-2013 Roland Winkler <winkler@gnu.org>
+;; Copyright (C) 2011-2014 Roland Winkler <winkler@gnu.org>
 
 ;; This file is part of the Insidious Big Brother Database (aka BBDB),
 
@@ -29,8 +29,8 @@
 ;; If FORM is nil, TEXT is used instead to display the anniversary entry
 ;; in the diary buffer.
 ;;
-;; To display BBDB anniversaries in the Emacs diary, use
-;; (add-hook 'diary-list-entries-hook 'bbdb-anniv-diary-entries)
+;; To display BBDB anniversaries in the Emacs diary,
+;; call `bbdb-initialize' with arg `anniv'.
 ;;
 ;; See the BBDB info manual for documentation.
 

@@ -4,10 +4,10 @@
 # Author:        Didier Verna <didier@xemacs.org>
 # Maintainer:    Roland Winkler <winkler@gnu.org>
 # Created:       Tue Nov 14 18:28:52 2000
-# Last Revision: $Date: 2013/07/21 22:56:39 $
+# Last Revision: $Date: 2013/11/16 15:10:55 $
 # 
 # Copyright (C) 2000-2001 Didier Verna <didier@xemacs.org>
-# Copyright (C) 2011-2013 Roland Winkler <winkler@gnu.org>
+# Copyright (C) 2011-2014 Roland Winkler <winkler@gnu.org>
 # 
 # BBDB is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -26,7 +26,7 @@
 
 AC_PREREQ([2.69])
 
-AC_INIT([bbdb],[3.02],[bbdb-info@lists.sourceforge.net],[],[http://savannah.nongnu.org/projects/bbdb/]) 
+AC_INIT([bbdb],[3.0.50],[bbdb-info@lists.sourceforge.net],[],[http://savannah.nongnu.org/projects/bbdb/]) 
 AC_CONFIG_SRCDIR([lisp/bbdb.el])
 AC_CONFIG_MACRO_DIR([m4])
 # We need GNU Automake 1.13 for AM_ELCFLAGS.
@@ -48,6 +48,7 @@ AC_SUBST([AM_ELCFLAGS])
 AC_CONFIG_FILES([Makefile
                  lisp/Makefile
                  lisp/bbdb-site.el
+                 lisp/bbdb-pkg.el
                  doc/Makefile
                  tex/Makefile])
 

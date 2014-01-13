@@ -1,7 +1,7 @@
 ;;; bbdb-com.el --- user-level commands of BBDB
 
 ;; Copyright (C) 1991, 1992, 1993 Jamie Zawinski <jwz@netscape.com>.
-;; Copyright (C) 2010-2013 Roland Winkler <winkler@gnu.org>
+;; Copyright (C) 2010-2014 Roland Winkler <winkler@gnu.org>
 
 ;; This file is part of the Insidious Big Brother Database (aka BBDB),
 
@@ -142,29 +142,6 @@ With ARG a negative number do not append."
         (current-prefix-arg 'multi-line)
         (t bbdb-layout)))
 
-;; Should we call this more often?
-;; The MUA commands and functions call `bbdb-records' that checks
-;; consistency and tries to revert if necessary.
-(defun bbdb-editable ()
-  "Throw an error if BBDB is not editable.
-BBDB is not editable if it is read-only or out of sync."
-  (if bbdb-read-only
-      (error "The Insidious Big Brother Database is read-only."))
-  (unless (buffer-live-p bbdb-buffer)
-    (error "No live BBDB buffer"))
-  (unless (verify-visited-file-modtime bbdb-buffer)
-    (error "BBDB file changed on disk.  Revert?"))
-  ;; Is the following possible?  Superfluous tests do not hurt.
-  ;; (It is relevant only for editing commands in a BBDB buffer,
-  ;; but not for MUA-related editing functions.)
-  (if (and (eq major-mode 'bbdb-mode)
-           bbdb-records)
-      (unless (memq (caar bbdb-records)
-                    ;; Do not call `bbdb-records' that tries to revert.
-                    (with-current-buffer bbdb-buffer
-                      bbdb-records))
-        (error "The Insidious Big Brother Database is out of sync."))))
-
 (defun bbdb-search-invert-p ()
   "Return variable `bbdb-search-invert' and set it to nil.
 To set it again, use command `bbdb-search-invert'."
@@ -278,9 +255,9 @@ but not allowing for regexps."
               clauses))
     (if xfield-re
         (push `(cond ((stringp ,xfield-re)
-                      ;; check xfield `notes'
+                      ;; check xfield `bbdb-default-xfield'
                       (string-match ,xfield-re
-                                    (or (bbdb-record-xfield record 'notes) "")))
+                                    (or (bbdb-record-xfield record bbdb-default-xfield) "")))
                      ((eq (car ,xfield-re) '*)
                       ;; check all xfields
                       (let ((labels bbdb-xfield-label-list) done tmp)
@@ -395,33 +372,77 @@ the record to be displayed or nil otherwise."
 
 ;; clean-up functions
 
-;; This need not be restricted to mail field.
-;; RW: It seems that, as a minimum. one should always use `add-to-list'
-;; to avoid the problem which `bbdb-delete-duplicate-mails' is supposed
-;; to solve!
-(defun bbdb-delete-duplicate-mails (records &optional update)
-  "Remove duplicate mails from RECORDS.
-These duplicates may occur if we feed BBDB automatically.
+;;; Sometimes one gets mail from foo@bar.baz.com, and then later gets mail
+;;; from foo@baz.com.  At this point, one would like to delete the bar.baz.com
+;;; address, since the baz.com address is obviously superior.
+
+(defun bbdb-mail-redundant-re (mail)
+  "Return a regexp matching redundant variants of email address MAIL.
+For example, \"foo@bar.baz.com\" is redundant w.r.t. \"foo@baz.com\".
+Return nil if MAIL is not a valid plain email address.
+In particular, ignore addresses \"Joe Smith <foo@baz.com>\"."
+  (let* ((match (string-match "\\`\\([^ ]+\\)@\\(.+\\)\\'" mail))
+         (name (and match (match-string 1 mail)))
+         (host (and match (match-string 2 mail))))
+    (if (and name host)
+        (concat (regexp-quote name) "@.*\\." (regexp-quote host)))))
+
+(defun bbdb-delete-redundant-mails (records &optional query update)
+  "Delete redundant or duplicate mails from RECORDS.
+For example, \"foo@bar.baz.com\" is redundant w.r.t. \"foo@baz.com\".
+Duplicates may (but should not) occur if we feed BBDB automatically.
 Interactively, use BBDB prefix \
 \\<bbdb-mode-map>\\[bbdb-do-all-records], see `bbdb-do-all-records'.
+If QUERY is non-nil (as in interactive calls, unless we use a prefix arg)
+query before deleting the redundant mail addresses.
 If UPDATE is non-nil (as in interactive calls) update the database.
-Otherwise, this is the caller's responsiblity (for example, when used
-in `bbdb-change-hook')."
-  (interactive (list (bbdb-do-records) t))
+Otherwise, this is the caller's responsiblity.
+
+Noninteractively, this may be used as an element of `bbdb-notice-record-hook'
+or `bbdb-change-hook'.  However, see also `bbdb-ignore-redundant-mails',
+which is probably more suited for your needs."
+  (interactive (list (bbdb-do-records) (not current-prefix-arg) t))
+  (bbdb-editable)
   (dolist (record (bbdb-record-list records))
-    (let (cmails)
+    (let (mails redundant okay)
+      ;; We do not look at the canonicalized mail addresses of RECORD.
+      ;; An address "Joe Smith <foo@baz.com>" can only be entered manually
+      ;; into BBDB, and we assume that this is what the user wants.
+      ;; Anyway, if a mail field contains all the elements
+      ;; foo@baz.com, "Joe Smith <foo@baz.com>", "Jonathan Smith <foo@baz.com>"
+      ;; we do not know which address to keep and which ones to throw.
       (dolist (mail (bbdb-record-mail record))
-        (add-to-list 'cmails mail))
-      (bbdb-record-set-mail record (nreverse cmails))
-      (when update
-        (bbdb-change-record record)
-        (bbdb-redisplay-record record)))))
+        (if (assoc-string mail mails t) ; duplicate mail address
+            (push mail redundant)
+          (push mail mails)))
+      (let ((mail-re (delq nil (mapcar 'bbdb-mail-redundant-re mails)))
+            (case-fold-search t))
+        (if (not (cdr mail-re)) ; at most one mail-re address to consider
+            (setq okay (nreverse mails))
+          (setq mail-re (concat "\\`\\(?:" (mapconcat 'identity mail-re "\\|")
+                                "\\)\\'"))
+          (dolist (mail mails)
+            (if (string-match mail-re mail) ; redundant mail address
+                (push mail redundant)
+              (push mail okay)))))
+      (let ((form (format "redundant mail%s %s"
+                          (if (< 1 (length redundant)) "s" "")
+                          (bbdb-concat 'mail (nreverse redundant)))))
+        (when (and redundant
+                   (or (not query)
+                       (y-or-n-p (format "Delete %s: " form))))
+          (unless query (message "Deleting %s" form))
+          (bbdb-record-set-field record 'mail okay)
+          (when update
+            (bbdb-change-record record)))))))
+(define-obsolete-function-alias 'bbdb-delete-duplicate-mails
+  'bbdb-delete-redundant-mails)
 
 (defun bbdb-search-duplicates (&optional fields)
   "Search all records that have duplicate entries for FIELDS.
 The list FIELDS may contain the symbols `name', `mail', and `aka'.
 If FIELDS is nil use all these fields.  With prefix, query for FIELDS.
-The search results are displayed in the bbdb buffer."
+The search results are displayed in the BBDB buffer."
   (interactive (list (if current-prefix-arg
                          (list (intern (completing-read "Field: "
                                                         '("name" "mail" "aka")
@@ -436,7 +457,7 @@ The search results are displayed in the bbdb buffer."
                                           '(fl-name lf-name aka)))
                  (> (length hash) 1))
         (setq ret (append hash ret))
-        (message "BBDB record `%s' causes duplicates, maybe it is equal to an organization name."
+        (message "BBDB record `%s' has duplicate name."
                  (bbdb-record-name record))
         (sit-for 0))
 
@@ -458,7 +479,8 @@ The search results are displayed in the bbdb buffer."
                        (bbdb-record-name record) aka)
               (sit-for 0)))))
 
-    (bbdb-display-records (delete-dups ret))))
+    (bbdb-display-records (sort (delete-dups ret)
+                                'bbdb-record-lessp))))
 
 ;;; Time-based functions
 
@@ -619,9 +641,7 @@ See `bbdb-search' for searching records with regexps."
   "Prompt for and return a new BBDB record.
 Does not insert it into the database or update the hashtables,
 but does ensure that there will not be name collisions."
-  (if bbdb-read-only
-      (error "The Insidious Big Brother Database is read-only."))
-  (bbdb-buffer)  ; make sure database is loaded and up-to-date
+  (bbdb-editable)
   (let (name)
     (bbdb-error-retry
      (setq name (bbdb-read-name first-and-last))
@@ -659,12 +679,12 @@ but does ensure that there will not be name collisions."
                                                  bbdb-default-area-code))))))
                (push (apply 'vector label phone-list) phones))
              (nreverse phones)))
-          ;; notes
-          (notes (bbdb-read-string "Notes: ")))
-      (setq notes (unless (string= notes "")
-                    `((notes . ,notes))))
+          ;; `bbdb-default-xfield'
+          (xfield (bbdb-read-xfield bbdb-default-xfield)))
       (vector (car name) (cdr name) nil nil organizations phones addresses
-              mail notes (make-vector bbdb-cache-length nil)))))
+              mail (unless (string= xfield "")
+                     (list (cons bbdb-default-xfield xfield)))
+              (make-vector bbdb-cache-length nil)))))
 
 (defun bbdb-read-name (&optional first-and-last dfirst dlast)
   "Read name for a record from minibuffer.
@@ -706,57 +726,57 @@ using the echo area, inserts the new record in BBDB, sorted alphabetically,
 and offers to save the BBDB file.  DO NOT call this from a program.
 Call `bbdb-create-internal' instead."
   (interactive (list (bbdb-read-record current-prefix-arg)))
-  (run-hook-with-args 'bbdb-create-hook record)
   (bbdb-change-record record t t)
   (bbdb-display-records (list record)))
 
-(defun bbdb-create-internal (name &optional affix aka organization mail
-                                  phone address xfields)
-  "Adds a record to the database; this function does a fair amount of
-error-checking on the passed in values, so it is safe to call this from
-other programs.
+(defun bbdb-create-internal (&optional name affix aka organization mail
+                                       phone address xfields check)
+  "Add a new record to the database and return it.
 
 NAME is a string or a cons cell (FIRST . LAST), the name of the person to add.
 An error is thrown if NAME is already in use and `bbdb-allow-duplicates' is nil.
 ORGANIZATION is a list of strings.
 MAIL is a comma-separated list of mail address, or a list of strings.
-An error is signalled if that mail address is already in use.
+An error is thrown if a mail address in MAIL is already in use
+and `bbdb-allow-duplicates' is nil.
 ADDRESS is a list of address objects.  An address is a vector of the form
 \[\"label\" (\"line1\" \"line2\" ... ) \"City\" \"State\" \"Postcode\" \"Country\"].
 PHONE is a list of phone-number objects.  A phone-number is a vector of
 the form [\"label\" areacode prefix suffix extension-or-nil]
 or [\"label\" \"phone-number\"]
-XFIELDS is an alist associating symbols with strings."
+XFIELDS is an alist associating symbols with strings.
+
+If CHECK is non-nil throw an error if an argument is not syntactically correct."
+  (bbdb-editable)
   ;; name
-  (if (stringp name)
-      (setq name (bbdb-divide-name name))
-    (bbdb-check-type name '(cons string string) t))
+  (cond ((stringp name)
+         (setq name (bbdb-divide-name name)))
+        (check (bbdb-check-type name '(or nil (cons string string)) t)))
   (let ((firstname (car name))
         (lastname (cdr name))
         (record-type (cdr bbdb-record-type)))
     (bbdb-check-name firstname lastname)
     ;; mail addresses
-    (if (stringp mail)
-        (setq mail (bbdb-split 'mail mail))
-      (bbdb-check-type mail (bbdb-record-mail record-type) t))
+    (cond ((stringp mail)
+           (setq mail (bbdb-split 'mail mail)))
+          (check (bbdb-check-type mail (bbdb-record-mail record-type) t)))
     (unless bbdb-allow-duplicates
       (dolist (elt mail)
         (if (bbdb-gethash elt '(mail))
             (error "%s is already in the database" elt))))
     ;; other fields
-    (bbdb-check-type affix (bbdb-record-affix record-type) t)
-    (bbdb-check-type aka (bbdb-record-aka record-type) t)
-    (bbdb-check-type organization (bbdb-record-organization record-type) t)
-    (bbdb-check-type phone (bbdb-record-phone record-type) t)
-    (bbdb-check-type address (bbdb-record-address record-type) t)
-    (bbdb-check-type xfields (bbdb-record-xfields record-type) t)
-    (let ((record
-           (vector firstname lastname affix aka organization phone
-                   address mail xfields
-                   (make-vector bbdb-cache-length nil))))
-      (run-hook-with-args 'bbdb-create-hook record)
-      (bbdb-change-record record t t)
-      record)))
+    (when check
+      (bbdb-check-type affix (bbdb-record-affix record-type) t)
+      (bbdb-check-type aka (bbdb-record-aka record-type) t)
+      (bbdb-check-type organization (bbdb-record-organization record-type) t)
+      (bbdb-check-type phone (bbdb-record-phone record-type) t)
+      (bbdb-check-type address (bbdb-record-address record-type) t)
+      (bbdb-check-type xfields (bbdb-record-xfields record-type) t))
+    (bbdb-change-record
+     (vector firstname lastname affix aka organization phone
+             address mail xfields
+             (make-vector bbdb-cache-length nil))
+     t t)))
 
 ;;;###autoload
 (defun bbdb-insert-field (record field value)
@@ -781,8 +801,7 @@ value of \"\", the default) means do not alter the address."
                         '(affix organization aka phone address mail)))
           (field "")
           (completion-ignore-case t)
-          (present (mapcar 'car (bbdb-record-xfields record)))
-          init init-f)
+          (present (mapcar 'car (bbdb-record-xfields record))))
      (if (bbdb-record-affix record) (push 'affix present))
      (if (bbdb-record-organization record) (push 'organization present))
      (if (bbdb-record-mail record) (push 'mail present))
@@ -792,13 +811,10 @@ value of \"\", the default) means do not alter the address."
      (setq list (mapcar 'symbol-name list))
      (while (string= field "")
        (setq field (downcase (completing-read "Insert Field: " list))))
-     (if (memq (intern field) present)
+     (setq field (intern field))
+     (if (memq field present)
          (error "Field \"%s\" already exists" field))
-     (setq init-f (intern-soft (concat "bbdb-init-" field))
-           init   (if (and init-f (functionp init-f))
-                      (funcall init-f record))
-           field (intern field))
-     (list record field (bbdb-prompt-for-new-field field init
+     (list record field (bbdb-prompt-for-new-field record field
                                                    current-prefix-arg))))
 
   (cond (;; affix
@@ -840,59 +856,59 @@ value of \"\", the default) means do not alter the address."
              (setq value (bbdb-split 'aka value)))
          (bbdb-record-set-field record 'aka value))
         ;; xfields
+        ((assq field (bbdb-record-xfields record))
+         (error "xfield \"%s\" already exists" field))
         (t
-         (if (assq field (bbdb-record-xfields record))
-             (error "xfield \"%s\" already exists" field))
          (bbdb-record-set-xfield record field value)))
-  (bbdb-change-record record)
   (let (bbdb-layout)
-    (bbdb-redisplay-record record)))
+    (bbdb-change-record record)))
 
 ;; Used by `bbdb-insert-field' and `bbdb-insert-field-menu'.
-(defun bbdb-prompt-for-new-field (field &optional init flag)
-  (cond (;; affix
-         (eq field 'affix) (bbdb-read-string "Affix: " init))
-        ;; organization
-        ((eq field 'organization) (bbdb-read-organization init))
-        ;; mail
-        ((eq field 'mail)
-         (let ((mail (bbdb-read-string "Mail: " init)))
-           (if (string-match "^mailto:" mail)
-               (setq mail (substring mail (match-end 0))))
-           (if (or (not bbdb-default-domain)
-                   current-prefix-arg (string-match "[@%!]" mail))
-               mail
-             (concat mail "@" bbdb-default-domain))))
-        ;; AKA
-        ((eq field 'aka) (bbdb-read-string "Alternate Names: " init))
-        ;; Phone
-        ((eq field 'phone)
-         (let ((bbdb-phone-style
-                (if current-prefix-arg
-                    (if (eq bbdb-phone-style 'nanp) nil 'nanp)
-                  bbdb-phone-style)))
-           (apply 'vector
-                  (bbdb-read-string "Label: " nil bbdb-phone-label-list)
-                  (bbdb-error-retry
-                   (bbdb-parse-phone
-                    (read-string "Phone: "
-                                 (and (integerp bbdb-default-area-code)
-                                      (format "(%03d) "
-                                              bbdb-default-area-code))))))))
-        ;; Address
-        ((eq field 'address)
-         (let ((address (make-vector bbdb-address-length nil)))
-           (bbdb-record-edit-address address nil flag)
-           address))
-        ;; xfield
-        ((memq field bbdb-xfield-label-list)
-         (bbdb-read-string (format "%s: " field) init))
-        ;; New xfield
-        (t
-         (unless (y-or-n-p
-                  (format "\"%s\" is an unknown field name.  Define it? " field))
-           (error "Aborted"))
-         (bbdb-read-string (format "%s: " field) init))))
+(defun bbdb-prompt-for-new-field (record field &optional flag)
+  (let* ((init-f (intern-soft (concat "bbdb-init-" (symbol-name field))))
+         (init (if (and init-f (functionp init-f))
+                   (funcall init-f record))))
+    (cond (;; affix
+           (eq field 'affix) (bbdb-read-string "Affix: " init))
+          ;; organization
+          ((eq field 'organization) (bbdb-read-organization init))
+          ;; mail
+          ((eq field 'mail)
+           (let ((mail (bbdb-read-string "Mail: " init)))
+             (if (string-match "^mailto:" mail)
+                 (setq mail (substring mail (match-end 0))))
+             (if (or (not bbdb-default-domain)
+                     current-prefix-arg (string-match "[@%!]" mail))
+                 mail
+               (concat mail "@" bbdb-default-domain))))
+          ;; AKA
+          ((eq field 'aka) (bbdb-read-string "Alternate Names: " init))
+          ;; Phone
+          ((eq field 'phone)
+           (let ((bbdb-phone-style
+                  (if current-prefix-arg
+                      (if (eq bbdb-phone-style 'nanp) nil 'nanp)
+                    bbdb-phone-style)))
+             (apply 'vector
+                    (bbdb-read-string "Label: " nil bbdb-phone-label-list)
+                    (bbdb-error-retry
+                     (bbdb-parse-phone
+                      (read-string "Phone: "
+                                   (and (integerp bbdb-default-area-code)
+                                        (format "(%03d) "
+                                                bbdb-default-area-code))))))))
+          ;; Address
+          ((eq field 'address)
+           (let ((address (make-vector bbdb-address-length nil)))
+             (bbdb-record-edit-address address nil flag)
+             address))
+          ;; xfield
+          ((or (memq field bbdb-xfield-label-list)
+               ;; New xfield
+               (y-or-n-p
+                (format "\"%s\" is an unknown field name.  Define it? " field))
+               (error "Aborted"))
+           (bbdb-read-xfield field init)))))
 
 ;;;###autoload
 (defun bbdb-edit-field (record field &optional value flag)
@@ -959,12 +975,101 @@ a phone number or address with VALUE being nil."
           (t ; xfield
            (bbdb-record-set-xfield
             record field
-            (bbdb-read-string (format "%s: " field)
-                              (bbdb-record-xfield record field)))))
-    (bbdb-change-record record bbdb-need-to-sort)
-    (bbdb-redisplay-record record)))
+            (bbdb-read-xfield field (bbdb-record-xfield record field)))))
+    (bbdb-change-record record bbdb-need-to-sort)))
 
-(defun bbdb-read-organization (&optional default)
+(defun bbdb-edit-foo (record field &optional nvalue)
+  "For RECORD edit some FIELD (mostly interactively).
+FIELD may take the same values as the elements of the variable `bbdb-edit-foo'.
+If FIELD is 'phone or 'address, NVALUE should be an integer in order to edit
+the NVALUEth phone or address field; otherwise insert a new phone or address
+field.
+
+Interactively, if called without a prefix, the value of FIELD is the car
+of the variable `bbdb-edit-foo'.  When called with a prefix, the value
+of FIELD is the cdr of this variable."
+  (interactive
+   (let* ((_ (bbdb-editable))
+          (record (bbdb-current-record))
+          (tmp (if current-prefix-arg (cdr bbdb-edit-foo) (car bbdb-edit-foo)))
+          (field (if (memq tmp '(current-fields all-fields))
+                     ;; Do not require match so that we can define new xfields.
+                     (intern (completing-read
+                              "Field: " (mapcar 'list (if (eq tmp 'all-fields)
+                                                          (append '(name affix organization aka mail phone address)
+                                                                  bbdb-xfield-label-list)
+                                                        (append (if (bbdb-record-name record) '(name))
+                                                                (if (bbdb-record-affix record) '(affix))
+                                                                (if (bbdb-record-organization record) '(organization))
+                                                                (if (bbdb-record-aka record) '(aka))
+                                                                (if (bbdb-record-mail record) '(mail))
+                                                                (if (bbdb-record-phone record) '(phone))
+                                                                (if (bbdb-record-address record) '(address))
+                                                                (mapcar 'car (bbdb-record-xfields record)))))))
+                   tmp))
+          ;; Multiple phone and address fields may use the same label.
+          ;; So we cannot use these labels to uniquely identify
+          ;; a phone or address field.  So instead we number these fields
+          ;; consecutively.  But we do use the labels to annotate the numbers
+          ;; (available starting from GNU Emacs 24.1).
+          (nvalue (cond ((eq field 'phone)
+                         (let* ((phones (bbdb-record-phone record))
+                                (collection (cons (cons "new" "new phone #")
+                                                  (mapcar (lambda (n)
+                                                            (cons (format "%d" n) (bbdb-phone-label (nth n phones))))
+                                                          (number-sequence 0 (1- (length phones))))))
+                                (completion-extra-properties
+                                 '(:annotation-function
+                                   (lambda (s) (format "  (%s)" (cdr (assoc s collection)))))))
+                                ; (completion-annotate-function (cadr completion-extra-properties))) ; Emacs 23
+                           (if (< 0 (length phones))
+                               (completing-read "Phone field: " collection nil t)
+                             "new")))
+                        ((eq field 'address)
+                         (let* ((addresses (bbdb-record-address record))
+                                (collection (cons (cons "new" "new address")
+                                                  (mapcar (lambda (n)
+                                                            (cons (format "%d" n) (bbdb-address-label (nth n addresses))))
+                                                          (number-sequence 0 (1- (length addresses))))))
+                                (completion-extra-properties
+                                 '(:annotation-function
+                                   (lambda (s) (format "  (%s)" (cdr (assoc s collection)))))))
+                                ; (completion-annotate-function (cadr completion-extra-properties))) ; Emacs 23
+                           (if (< 0 (length addresses))
+                               (completing-read "Address field: " collection nil t)
+                             "new"))))))
+     (list record field (and (stringp nvalue)
+                             (if (string= "new" nvalue)
+                                 'new
+                               (string-to-number nvalue))))))
+
+  (if (memq field '(firstname lastname name-lf aka-all mail-aka mail-canon))
+      (error "Field `%s' illegal" field))
+  (let ((value (if (numberp nvalue)
+                   (nth nvalue (cond ((eq field 'phone) (bbdb-record-phone record))
+                                     ((eq field 'address) (bbdb-record-address record))
+                                     (t (error "%s: nvalue %s meaningless" field nvalue)))))))
+    (if (and (numberp nvalue) (not value))
+        (error "%s: nvalue %s out of range" field nvalue))
+    (if (or (and (eq field 'affix) (bbdb-record-affix record))
+            (and (eq field 'organization) (bbdb-record-organization record))
+            (and (eq field 'mail) (bbdb-record-mail record))
+            (and (eq field 'aka) (bbdb-record-aka record))
+            (assq field (bbdb-record-xfields record))
+            value)
+        (bbdb-edit-field record field value)
+      (bbdb-insert-field record field
+                         (bbdb-prompt-for-new-field record field)))))
+
+(defun bbdb-read-xfield (field &optional init)
+  "Read xfield FIELD with optional INIT.
+This calls bbdb-read-xfield-FIELD if it exists."
+  (let ((read-fun (intern-soft (format "bbdb-read-xfield-%s" field))))
+    (if (fboundp read-fun)
+        (funcall read-fun init)
+      (bbdb-read-string (format "%s: " field) init))))
+
+(defun bbdb-read-organization (&optional init)
   "Read organization."
   (if (string< "24.3" emacs-version)
       (let ((crm-separator
@@ -973,10 +1078,10 @@ a phone number or address with VALUE being nil."
                      "[ \t\n]*"))
             (crm-local-completion-map bbdb-crm-local-completion-map))
         (completing-read-multiple "Organizations: " bbdb-organization-list
-                                  nil nil default))
-    (bbdb-split 'organization (bbdb-read-string "Organizations: " default))))
+                                  nil nil init))
+    (bbdb-split 'organization (bbdb-read-string "Organizations: " init))))
 
-(defun bbdb-record-edit-address (address &optional label default)
+(defun bbdb-record-edit-address (address &optional label init)
   "Edit ADDRESS.
 If LABEL is nil, edit the label sub-field of the address as well.
 If the country field of ADDRESS is set, use the matching rule from
@@ -988,7 +1093,7 @@ to `bbdb-address-format-list'."
                                   bbdb-address-label-list)))
   (let ((country (or (bbdb-address-country address) ""))
         new-addr edit)
-    (unless (or default (string= "" country))
+    (unless (or init (string= "" country))
       (let ((list bbdb-address-format-list)
             identifier elt)
         (while (and (not edit) (setq elt (pop list)))
@@ -1010,21 +1115,25 @@ to `bbdb-address-format-list'."
                                  (bbdb-address-streets address))))
               ((eq elt ?c)
                (aset new-addr 1 (bbdb-read-string
-                                 "City: " (bbdb-address-city address))))
+                                 "City: " (bbdb-address-city address)
+                                 bbdb-city-list)))
               ((eq elt ?S)
                (aset new-addr 2 (bbdb-read-string
-                                 "State: " (bbdb-address-state address))))
+                                 "State: " (bbdb-address-state address)
+                                 bbdb-state-list)))
               ((eq elt ?p)
                (aset new-addr 3
                      (bbdb-error-retry
                       (bbdb-parse-postcode
                        (bbdb-read-string
-                        "Postcode: " (bbdb-address-postcode address))))))
+                        "Postcode: " (bbdb-address-postcode address)
+                        bbdb-postcode-list)))))
               ((eq elt ?C)
                (aset new-addr 4
                      (bbdb-read-string
                       "Country: " (or (bbdb-address-country address)
-                                      bbdb-default-country)))))))
+                                      bbdb-default-country)
+                      bbdb-country-list))))))
     (bbdb-address-set-label address label)
     (bbdb-address-set-streets address (elt new-addr 0))
     (bbdb-address-set-city address (elt new-addr 1))
@@ -1044,8 +1153,8 @@ to `bbdb-address-format-list'."
   (let ((n 0) street list)
     (while (not (string= "" (setq street
                                   (bbdb-read-string
-                                   (format "Street, line %d: " (+ 1 n))
-                                   (nth n streets)))))
+                                   (format "Street, line %d: " (1+ n))
+                                   (nth n streets) bbdb-street-list))))
       (push street list)
       (setq n (1+ n)))
     (reverse list)))
@@ -1061,13 +1170,16 @@ State:           state
 Postcode:        postcode
 Country:         country"
   (list (bbdb-edit-address-street (bbdb-address-streets address))
-        (bbdb-read-string "City: " (bbdb-address-city address))
-        (bbdb-read-string "State: " (bbdb-address-state address))
+        (bbdb-read-string "City: " (bbdb-address-city address) bbdb-city-list)
+        (bbdb-read-string "State: " (bbdb-address-state address)
+                          bbdb-state-list)
         (bbdb-error-retry
          (bbdb-parse-postcode
-          (bbdb-read-string "Postcode: " (bbdb-address-postcode address))))
+          (bbdb-read-string "Postcode: " (bbdb-address-postcode address)
+                            bbdb-postcode-list)))
         (bbdb-read-string "Country: " (or (bbdb-address-country address)
-                                          bbdb-default-country))))
+                                          bbdb-default-country)
+                          bbdb-country-list)))
 
 (defun bbdb-record-edit-phone (phones phone)
   "For list PHONES edit PHONE number."
@@ -1187,8 +1299,7 @@ irrespective of the value of ARG."
             record (nth 1 ident)
             (bbdb-list-transpose (bbdb-record-field record (nth 1 ident))
                                  num1 num2))))
-    (bbdb-change-record record need-to-sort)
-    (bbdb-redisplay-record record)))
+    (bbdb-change-record record need-to-sort)))
 
 ;;;###autoload
 (defun bbdb-delete-field-or-record (records field &optional noprompt)
@@ -1228,8 +1339,7 @@ If prefix NOPROMPT is non-nil, do not confirm deletion."
                 ((eq type 'xfields)
                  (bbdb-record-set-xfield record type-x nil))
                 (t (error "Unknown field %s" type)))
-          (bbdb-change-record record)
-          (bbdb-redisplay-record record))))))
+          (bbdb-change-record record))))))
 
 ;;;###autoload
 (defun bbdb-delete-records (records &optional noprompt)
@@ -1244,7 +1354,6 @@ If prefix NOPROMPT is non-nil, do not confirm deletion."
               (y-or-n-p (format "Delete the BBDB record of %s? "
                                 (or (bbdb-record-name record)
                                     (car (bbdb-record-mail record))))))
-      (bbdb-redisplay-record record t)
       (bbdb-delete-record-internal record t)
       (setq bbdb-records (delq (assq record bbdb-records) bbdb-records))
       ;; Possibly we changed RECORD before deleting it.
@@ -1351,7 +1460,7 @@ With prefix N, omit the next N records.  If negative, omit backwards."
 
 ;;;###autoload
 (defun bbdb-merge-records (old-record new-record)
-  "Merge OLD-RECORD into NEW-RECORD.
+  "Merge OLD-RECORD into NEW-RECORD, return NEW-RECORD.
 This copies all the data in OLD-RECORD into NEW-RECORD.  Then OLD-RECORD
 is deleted.  If both records have names ask which to use.
 Affixes, organizations, phone numbers, addresses, and mail addresses
@@ -1360,7 +1469,8 @@ are simply concatenated.
 Interactively, OLD-RECORD is the current record.  NEW-RECORD is prompted for.
 With prefix arg NEW-RECORD defaults to the first record with the same name."
   (interactive
-   (let* ((old-record (bbdb-current-record))
+   (let* ((_ (bbdb-editable))
+          (old-record (bbdb-current-record))
           (name (bbdb-record-name old-record))
           (new-record (and current-prefix-arg
                            ;; take the first record with the same name
@@ -1378,6 +1488,7 @@ With prefix arg NEW-RECORD defaults to the first record with the same name."
                             "???"))
                 (list old-record))))))
 
+  (bbdb-editable)
   (cond ((eq old-record new-record) (error "Records are equal"))
         ((null new-record) (error "No record to merge with")))
 
@@ -1436,10 +1547,7 @@ With prefix arg NEW-RECORD defaults to the first record with the same name."
 
   (bbdb-delete-records (list old-record) 'noprompt)
   (bbdb-change-record new-record t)
-  (if (assq new-record bbdb-records)
-      (bbdb-redisplay-record new-record)
-    ;; Append NEW-RECORD to the list of displayed records.
-    (bbdb-display-records (list new-record) nil t)))
+  new-record)
 
 ;; The following sorting functions are also intended for use
 ;; in `bbdb-change-hook'.  Then they will be called with one arg, the record.
@@ -1453,13 +1561,13 @@ If UPDATE is non-nil (as in interactive calls) update the database.
 Otherwise, this is the caller's responsiblity (for example, when used
 in `bbdb-change-hook')."
   (interactive (list (bbdb-do-records) t))
+  (bbdb-editable)
   (dolist (record (bbdb-record-list records))
     (bbdb-record-set-address
      record (sort (bbdb-record-address record)
                   (lambda (xx yy) (string< (aref xx 0) (aref yy 0)))))
-    (when update
-      (bbdb-change-record record)
-      (bbdb-redisplay-record record))))
+    (if update
+        (bbdb-change-record record))))
 
 ;;;###autoload
 (defun bbdb-sort-phones (records &optional update)
@@ -1470,13 +1578,13 @@ If UPDATE is non-nil (as in interactive calls) update the database.
 Otherwise, this is the caller's responsiblity (for example, when used
 in `bbdb-change-hook')."
   (interactive (list (bbdb-do-records) t))
+  (bbdb-editable)
   (dolist (record (bbdb-record-list records))
     (bbdb-record-set-phone
      record (sort (bbdb-record-phone record)
                   (lambda (xx yy) (string< (aref xx 0) (aref yy 0)))))
-    (when update
-      (bbdb-change-record record)
-      (bbdb-redisplay-record record))))
+    (if update
+        (bbdb-change-record record))))
 
 ;;;###autoload
 (defun bbdb-sort-xfields (records &optional update)
@@ -1487,15 +1595,15 @@ If UPDATE is non-nil (as in interactive calls) update the database.
 Otherwise, this is the caller's responsiblity (for example, when used
 in `bbdb-change-hook')."
   (interactive (list (bbdb-do-records) t))
+  (bbdb-editable)
   (dolist (record (bbdb-record-list records))
     (bbdb-record-set-xfields
      record (sort (bbdb-record-xfields record)
                   (lambda (a b)
                     (< (or (cdr (assq (car a) bbdb-xfields-sort-order)) 100)
                        (or (cdr (assq (car b) bbdb-xfields-sort-order)) 100)))))
-    (when update
-      (bbdb-change-record record)
-      (bbdb-redisplay-record record))))
+    (if update
+        (bbdb-change-record record))))
 (define-obsolete-function-alias 'bbdb-sort-notes 'bbdb-sort-xfields)
 
 ;;; Send-Mail interface
@@ -1738,9 +1846,9 @@ completion with."
              (nth (1- (string-to-number result)) records))))))
 
 ;;;###autoload
-(defun bbdb-completing-read-mails (prompt &optional default)
+(defun bbdb-completing-read-mails (prompt &optional init)
   "Like `read-string', but allows `bbdb-complete-mail' style completion."
-  (read-from-minibuffer prompt default
+  (read-from-minibuffer prompt init
                         bbdb-completing-read-mails-map))
 
 (defconst bbdb-quoted-string-syntax-table
@@ -1777,196 +1885,210 @@ as part of the MUA insinuation."
   (bbdb-buffer) ; Make sure the database is initialized.
 
   ;; Completion should begin after the preceding comma (separating
-  ;; two addresses) or colon (separating the field name of the header
-  ;; from the field body).  We want to ignore these characters
+  ;; two addresses) or colon (separating the header field name
+  ;; from the header field body).  We want to ignore these characters
   ;; if they appear inside a quoted string (RFC 5322, Sec. 3.2.4).
   ;; Note also that a quoted string may span multiple lines
   ;; (RFC 5322, Sec. 2.2.3).
-  ;; So to be save, we go back to the beginning of the field body
+  ;; So to be save, we go back to the beginning of the header field body
   ;; (past the colon, when we are certainly not inside a quoted string),
   ;; then we parse forward, looking for commas not inside a quoted string
   ;; and positioned before END.  - This fails with an unbalanced quote.
   ;; But an unbalanced quote is bound to fail anyway.
-  (unless beg
+  (when (and (not beg)
+             (<= (point)
+                 (save-restriction ; `mail-header-end'
+                   (widen)
+                   (save-excursion
+                     (rfc822-goto-eoh)
+                     (point)))))
     (let ((end (point))
           start pnt state)
       (save-excursion
-        (re-search-backward "^[^ \t\n:][^:]*:[ \t\n]+") ; Field name
+        ;; A header field name must appear at the beginning of a line,
+        ;; and it must be terminated by a colon.
+        (re-search-backward "^[^ \t\n:][^:]*:[ \t\n]+")
         (setq beg (match-end 0)
               start beg)
-        ;; FIXME: Here we should analyze more carefully that point
-        ;; is inside the body of a valid header we want to complete.
-        ;; If point is not inside the body of such a header,
-        ;; `bbdb-complete-mail' should do nothing and return nil.
-        ;; We could internally set BEG to nil to identify such
-        ;; a situation.
-        ;; (if (re-search-forward "\n[^ \t]" end t)
-        ;;     (error "Not a message header")) ; too simple!
         (goto-char beg)
-        ;; Parse field body up to END
-        (with-syntax-table bbdb-quoted-string-syntax-table
-          (while (setq pnt (re-search-forward ",[ \t\n]*" end t))
-            (setq state (parse-partial-sexp start pnt nil nil state)
-                  start pnt)
-            (unless (nth 3 state) (setq beg pnt)))))))
+        ;; If we are inside a syntactically correct header field,
+        ;; all continuation lines in between the field name and point
+        ;; must begin with a white space character.
+        (if (re-search-forward "\n[^ \t]" end t)
+            ;; An invalid header is identified via BEG set to nil.
+            (setq beg nil)
+          ;; Parse field body up to END
+          (with-syntax-table bbdb-quoted-string-syntax-table
+            (while (setq pnt (re-search-forward ",[ \t\n]*" end t))
+              (setq state (parse-partial-sexp start pnt nil nil state)
+                    start pnt)
+              (unless (nth 3 state) (setq beg pnt))))))))
+
+  ;; Do we have a meaningful way to set BEG if we are not in a message header?
+  (unless beg
+    (message "Not a valid buffer position for mail completion")
+    (sit-for 1))
 
   (let* ((end (point))
-         (orig (buffer-substring beg end))
+         (done (unless beg 'nothing))
+         (orig (and beg (buffer-substring beg end)))
          (completion-ignore-case t)
-         (completion (try-completion orig bbdb-hashtable
-                                     'bbdb-completion-predicate))
-         all-completions dwim-completions one-record done)
+         (completion (and orig
+                          (try-completion orig bbdb-hashtable
+                                          'bbdb-completion-predicate)))
+         all-completions dwim-completions one-record)
 
-    ;; We get fooled if a partial COMPLETION matches "," (for example,
-    ;; a comma in lf-name).  Such a partial COMPLETION cannot be protected
-    ;; by quoting.  Then the comma gets interpreted as BEG.
-    ;; So we never perform partial completion beyond the first comma.
-    ;; This works even if we have just one record matching ORIG (thus
-    ;; allowing dwim-completion) because ORIG is a substring of COMPLETION
-    ;; even after COMPLETION got truncated; and ORIG by itself must be
-    ;; sufficient to identify this record.
-    ;; Yet if multiple records match ORIG we can only offer a *Completions*
-    ;; buffer.
-    (if (and (stringp completion)
-             (string-match "," completion))
-        (setq completion (substring completion 0 (match-beginning 0))))
+    (unless done
+      ;; We get fooled if a partial COMPLETION matches "," (for example,
+      ;; a comma in lf-name).  Such a partial COMPLETION cannot be protected
+      ;; by quoting.  Then the comma gets interpreted as BEG.
+      ;; So we never perform partial completion beyond the first comma.
+      ;; This works even if we have just one record matching ORIG (thus
+      ;; allowing dwim-completion) because ORIG is a substring of COMPLETION
+      ;; even after COMPLETION got truncated; and ORIG by itself must be
+      ;; sufficient to identify this record.
+      ;; Yet if multiple records match ORIG we can only offer a *Completions*
+      ;; buffer.
+      (if (and (stringp completion)
+               (string-match "," completion))
+          (setq completion (substring completion 0 (match-beginning 0))))
 
-    ;; We cannot use the return value of the function `all-completions'
-    ;; to set the variable `all-completions' because this function
-    ;; converts all symbols into strings
-    (all-completions orig bbdb-hashtable
-                     (lambda (sym)
-                       (if (bbdb-completion-predicate sym)
-                           (push sym all-completions))))
-    ;; Resolve the records matching ORIG:
-    ;; Multiple completions may match the same record
-    (let ((records (delete-dups
-                    (apply 'append (mapcar 'symbol-value all-completions)))))
-      ;; Is there only one matching record?
-      (setq one-record (and (not (cdr records))
-                            (car records))))
+      ;; We cannot use the return value of the function `all-completions'
+      ;; to set the variable `all-completions' because this function
+      ;; converts all symbols into strings
+      (all-completions orig bbdb-hashtable
+                       (lambda (sym)
+                         (if (bbdb-completion-predicate sym)
+                             (push sym all-completions))))
+      ;; Resolve the records matching ORIG:
+      ;; Multiple completions may match the same record
+      (let ((records (delete-dups
+                      (apply 'append (mapcar 'symbol-value all-completions)))))
+        ;; Is there only one matching record?
+        (setq one-record (and (not (cdr records))
+                              (car records))))
 
-    ;; Clean up *Completions* buffer window, if it exists
-    (let ((window (get-buffer-window "*Completions*")))
-      (if (window-live-p window)
-          (quit-window nil window)))
+      ;; Clean up *Completions* buffer window, if it exists
+      (let ((window (get-buffer-window "*Completions*")))
+        (if (window-live-p window)
+            (quit-window nil window)))
 
-    (cond
-     ;; Match for a single record
-     (one-record
-      (let ((completion-list (if (eq t bbdb-completion-list)
-                                 '(fl-name lf-name mail aka organization)
-                               bbdb-completion-list))
-            (mails (bbdb-record-mail one-record))
-            mail elt)
-        (if (not mails)
-            (progn
-              (message "Matching record has no mail field")
-              (sit-for 1)
-              (setq done 'nothing))
+      (cond
+       ;; Match for a single record
+       (one-record
+        (let ((completion-list (if (eq t bbdb-completion-list)
+                                   '(fl-name lf-name mail aka organization)
+                                 bbdb-completion-list))
+              (mails (bbdb-record-mail one-record))
+              mail elt)
+          (if (not mails)
+              (progn
+                (message "Matching record has no mail field")
+                (sit-for 1)
+                (setq done 'nothing))
 
-          ;; Determine the mail address of ONE-RECORD to use for ADDRESS.
-          ;; Do we have a preferential order for the following tests?
-          ;; (1) If ORIG matches name, AKA, or organization of ONE-RECORD,
-          ;;     then ADDRESS will be the first mail address of ONE-RECORD.
-          (if (try-completion orig
-                              (append
-                               (if (memq 'fl-name completion-list)
-                                   (list (or (bbdb-record-name one-record) "")))
-                               (if (memq 'lf-name completion-list)
-                                   (list (or (bbdb-record-name-lf one-record) "")))
-                               (if (memq 'aka completion-list)
-                                   (bbdb-record-field one-record 'aka-all))
-                               (if (memq 'organization completion-list)
-                                   (bbdb-record-organization one-record))))
-              (setq mail (car mails)))
-          ;; (2) If ORIG matches one or multiple mail addresses of ONE-RECORD,
-          ;;     then we take the first one matching ORIG.
-          ;;     We got here with MAIL still nil only if `bbdb-completion-list'
-          ;;     includes 'mail or 'primary.
-          (unless mail
-            (while (setq elt (pop mails))
-              (if (try-completion orig (list elt))
-                  (setq mail elt
-                        mails nil))))
-          ;; This error message indicates a bug!
-          (unless mail (error "No match for %s" orig))
+            ;; Determine the mail address of ONE-RECORD to use for ADDRESS.
+            ;; Do we have a preferential order for the following tests?
+            ;; (1) If ORIG matches name, AKA, or organization of ONE-RECORD,
+            ;;     then ADDRESS will be the first mail address of ONE-RECORD.
+            (if (try-completion orig
+                                (append
+                                 (if (memq 'fl-name completion-list)
+                                     (list (or (bbdb-record-name one-record) "")))
+                                 (if (memq 'lf-name completion-list)
+                                     (list (or (bbdb-record-name-lf one-record) "")))
+                                 (if (memq 'aka completion-list)
+                                     (bbdb-record-field one-record 'aka-all))
+                                 (if (memq 'organization completion-list)
+                                     (bbdb-record-organization one-record))))
+                (setq mail (car mails)))
+            ;; (2) If ORIG matches one or multiple mail addresses of ONE-RECORD,
+            ;;     then we take the first one matching ORIG.
+            ;;     We got here with MAIL nil only if `bbdb-completion-list'
+            ;;     includes 'mail or 'primary.
+            (unless mail
+              (while (setq elt (pop mails))
+                (if (try-completion orig (list elt))
+                    (setq mail elt
+                          mails nil))))
+            ;; This error message indicates a bug!
+            (unless mail (error "No match for %s" orig))
 
-          (let ((dwim-mail (bbdb-dwim-mail one-record mail)))
-            (if (string= dwim-mail orig)
-                ;; We get here if `bbdb-mail-avoid-redundancy' is 'mail-only
-                ;; and `bbdb-completion-list' includes 'mail.
-                (unless (and bbdb-complete-mail-allow-cycling
-                             (< 1 (length (bbdb-record-mail one-record))))
-                  (setq done 'unchanged))
-              ;; Replace the text with the expansion
-              (delete-region beg end)
-              (insert dwim-mail)
-              (bbdb-complete-mail-cleanup dwim-mail beg)
-              (setq done 'unique))))))
+            (let ((dwim-mail (bbdb-dwim-mail one-record mail)))
+              (if (string= dwim-mail orig)
+                  ;; We get here if `bbdb-mail-avoid-redundancy' is 'mail-only
+                  ;; and `bbdb-completion-list' includes 'mail.
+                  (unless (and bbdb-complete-mail-allow-cycling
+                               (< 1 (length (bbdb-record-mail one-record))))
+                    (setq done 'unchanged))
+                ;; Replace the text with the expansion
+                (delete-region beg end)
+                (insert dwim-mail)
+                (bbdb-complete-mail-cleanup dwim-mail beg)
+                (setq done 'unique))))))
 
-     ;; Partial completion
-     ((and (stringp completion)
-           (not (bbdb-string= orig completion)))
-      (delete-region beg end)
-      (insert completion)
-      (setq done 'partial))
+       ;; Partial completion
+       ((and (stringp completion)
+             (not (bbdb-string= orig completion)))
+        (delete-region beg end)
+        (insert completion)
+        (setq done 'partial))
 
-     ;; Partial match not allowing further partial completion
-     (completion
-      (let ((completion-list (if (eq t bbdb-completion-list)
-                                 '(fl-name lf-name mail aka organization)
-                               bbdb-completion-list))
-            sname)
-        ;; Now collect all the dwim-addresses for each completion.
-        ;; Add it if the mail is part of the completions
-        (dolist (sym all-completions)
-          (setq sname (symbol-name sym))
-          (dolist (record (symbol-value sym))
-            (let ((mails (bbdb-record-mail record))
-                  accept)
-              (when mails
-                (dolist (field completion-list)
-                  (cond ((eq field 'fl-name)
-                         (if (bbdb-string= sname (bbdb-record-name record))
-                             (push (car mails) accept)))
-                        ((eq field 'lf-name)
-                         (if (bbdb-string= sname (bbdb-cache-lf-name
-                                                  (bbdb-record-cache record)))
-                             (push (car mails) accept)))
-                        ((eq field 'aka)
-                         (if (member-ignore-case sname (bbdb-record-field
-                                                        record 'aka-all))
-                             (push (car mails) accept)))
-                        ((eq field 'organization)
-                         (if (member-ignore-case sname (bbdb-record-organization
-                                                        record))
-                             (push (car mails) accept)))
-                        ((eq field 'primary)
-                         (if (bbdb-string= sname (car mails))
-                             (push (car mails) accept)))
-                        ((eq field 'mail)
-                         (dolist (mail mails)
-                           (if (bbdb-string= sname mail)
-                               (push mail accept))))))
-                (dolist (mail (delete-dups accept))
-                  (push (bbdb-dwim-mail record mail) dwim-completions))))))
+       ;; Partial match not allowing further partial completion
+       (completion
+        (let ((completion-list (if (eq t bbdb-completion-list)
+                                   '(fl-name lf-name mail aka organization)
+                                 bbdb-completion-list))
+              sname)
+          ;; Now collect all the dwim-addresses for each completion.
+          ;; Add it if the mail is part of the completions
+          (dolist (sym all-completions)
+            (setq sname (symbol-name sym))
+            (dolist (record (symbol-value sym))
+              (let ((mails (bbdb-record-mail record))
+                    accept)
+                (when mails
+                  (dolist (field completion-list)
+                    (cond ((eq field 'fl-name)
+                           (if (bbdb-string= sname (bbdb-record-name record))
+                               (push (car mails) accept)))
+                          ((eq field 'lf-name)
+                           (if (bbdb-string= sname (bbdb-cache-lf-name
+                                                    (bbdb-record-cache record)))
+                               (push (car mails) accept)))
+                          ((eq field 'aka)
+                           (if (member-ignore-case sname (bbdb-record-field
+                                                          record 'aka-all))
+                               (push (car mails) accept)))
+                          ((eq field 'organization)
+                           (if (member-ignore-case sname (bbdb-record-organization
+                                                          record))
+                               (push (car mails) accept)))
+                          ((eq field 'primary)
+                           (if (bbdb-string= sname (car mails))
+                               (push (car mails) accept)))
+                          ((eq field 'mail)
+                           (dolist (mail mails)
+                             (if (bbdb-string= sname mail)
+                                 (push mail accept))))))
+                  (dolist (mail (delete-dups accept))
+                    (push (bbdb-dwim-mail record mail) dwim-completions))))))
 
-        (setq dwim-completions (sort (delete-dups dwim-completions)
-                                     'string-lessp))
-        (cond ((not dwim-completions)
-               (message "Matching record has no mail field")
-               (sit-for 1)
-               (setq done 'nothing))
-              ;; It may happen that DWIM-COMPLETIONS contains only one element,
-              ;; if multiple completions match the same record.  Then we may
-              ;; proceed with DONE set to `unique'.
-              ((eq 1 (length dwim-completions))
-               (delete-region beg end)
-               (insert (car dwim-completions))
-               (bbdb-complete-mail-cleanup (car dwim-completions) beg)
-               (setq done 'unique))
-              (t (setq done 'choose))))))
+          (setq dwim-completions (sort (delete-dups dwim-completions)
+                                       'string-lessp))
+          (cond ((not dwim-completions)
+                 (message "Matching record has no mail field")
+                 (sit-for 1)
+                 (setq done 'nothing))
+                ;; DWIM-COMPLETIONS may contain only one element,
+                ;; if multiple completions match the same record.
+                ;; Then we may proceed with DONE set to `unique'.
+                ((eq 1 (length dwim-completions))
+                 (delete-region beg end)
+                 (insert (car dwim-completions))
+                 (bbdb-complete-mail-cleanup (car dwim-completions) beg)
+                 (setq done 'unique))
+                (t (setq done 'choose)))))))
 
     ;; By now, we have considered all possiblities to perform a completion.
     ;; If nonetheless we haven't done anything so far, consider cycling.
@@ -2081,7 +2203,6 @@ If we are past `fill-column', wrap at the previous comma."
         (if bbdb-completion-display-record
             (let ((bbdb-silent-internal t))
               ;; FIXME: This pops up *BBDB* before removing *Completions*
-              (bbdb-pop-up-window)
               (bbdb-display-records records nil t)))
         ;; `bbdb-complete-mail-hook' may access MAIL, ADDRESS, and RECORDS.
         (run-hooks 'bbdb-complete-mail-hook))))
@@ -2265,9 +2386,8 @@ If pefix DELETE is non-nil, remove ALIAS from RECORD."
         ;; Add alias only if it is not there yet
         (add-to-list 'aliases alias))
       (setq aliases (bbdb-concat bbdb-mail-alias-field aliases))
-      (bbdb-record-set-xfield record bbdb-mail-alias-field aliases)
-      (bbdb-change-record record))
-    (bbdb-redisplay-record record)
+      (bbdb-record-set-xfield record bbdb-mail-alias-field aliases))
+    (bbdb-change-record record)
     ;; Rebuilt mail aliases
     (setq bbdb-mail-aliases-need-rebuilt
           (if delete

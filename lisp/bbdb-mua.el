@@ -1,7 +1,7 @@
 ;;; bbdb-mua.el --- various MUA functionality for BBDB
 
 ;; Copyright (C) 1991, 1992, 1993 Jamie Zawinski <jwz@netscape.com>.
-;; Copyright (C) 2010-2013 Roland Winkler <winkler@gnu.org>
+;; Copyright (C) 2010-2014 Roland Winkler <winkler@gnu.org>
 
 ;; This file is part of the Insidious Big Brother Database (aka BBDB),
 
@@ -200,7 +200,7 @@ is ignored. If IGNORE-ADDRESS is nil, use value of `bbdb-user-mail-address-re'."
                (bbdb-get-address-components nil ignore-address))))))
 
 ;;;###autoload
-(defun bbdb-update-records (address-list &optional update-p)
+(defun bbdb-update-records (address-list &optional update-p sort)
   "Return the list of BBDB records matching ADDRESS-LIST.
 ADDRESS-LIST is a list of mail addresses.  (It can be extracted from
 a mail message using `bbdb-get-address-components'.)
@@ -217,6 +217,9 @@ UPDATE-P may take the following values:
  nil          Take the MUA-specific variable `bbdb/MUA-update-records-p'
                 which may take one of the above values.
                 If this still gives nil, `bbdb-update-records' returns nil.
+
+If SORT is non-nil, sort records according to `bbdb-record-lessp'.
+Ottherwise, the records are ordered according to ADDRESS-LIST.
 
 Usually this function is called by the wrapper `bbdb-mua-update-records'."
   ;; UPDATE-P allows filtering of complete messages.
@@ -253,19 +256,20 @@ Usually this function is called by the wrapper `bbdb-mua-update-records'."
                         ;; We put the call of `bbdb-notice-mail-hook'
                         ;; into `bbdb-annotate-message' so that this hook
                         ;; runs only if the user agreed to change a record.
-                        (cond ((eq bbdb-update-records-p 'create)
-                               (bbdb-annotate-message address 'create))
-                              ((eq bbdb-update-records-p 'query)
-                               (bbdb-annotate-message
-                                address 'bbdb-prompt-for-create))
-                              ((eq bbdb-update-records-p 'update)
-                               (bbdb-annotate-message address 'update))
-                              ((eq bbdb-update-records-p 'search)
+                        (cond ((or bbdb-read-only
+                                   (eq bbdb-update-records-p 'search))
                                ;; Search for records having this mail address
                                ;; but do not modify an existing record.
                                ;; This does not run `bbdb-notice-mail-hook'.
                                (bbdb-message-search (car address)
-                                                    (cadr address)))))
+                                                    (cadr address)))
+                              ((eq bbdb-update-records-p 'update)
+                               (bbdb-annotate-message address 'update))
+                              ((eq bbdb-update-records-p 'query)
+                               (bbdb-annotate-message
+                                address 'bbdb-prompt-for-create))
+                              ((eq bbdb-update-records-p 'create)
+                               (bbdb-annotate-message address 'create))))
                   nil)))
           (cond ((eq task 'quit)
                  (setq address-list nil))
@@ -275,16 +279,20 @@ Usually this function is called by the wrapper `bbdb-mua-update-records'."
                    (add-to-list 'records hit))))
           (if (and records (not bbdb-message-all-addresses))
               (setq address-list nil))))
-      ;; Make RECORDS a list ordered like ADDRESS-LIST.
-      (setq records (nreverse records)))
+      (setq records
+            (if sort (sort records 'bbdb-record-lessp)
+              ;; Make RECORDS a list ordered like ADDRESS-LIST.
+              (nreverse records))))
 
     ;; `bbdb-message-search' might yield multiple records
     (if (and records (not bbdb-message-all-addresses))
         (setq records (list (car records))))
 
-    (let ((bbdb-notice-hook-pending t))
-      (dolist (record records)
-        (run-hook-with-args 'bbdb-notice-record-hook record)))
+    (unless bbdb-read-only
+      (bbdb-editable)
+      (let ((bbdb-notice-hook-pending t))
+        (dolist (record records)
+          (run-hook-with-args 'bbdb-notice-record-hook record))))
 
     records))
 
@@ -371,7 +379,7 @@ Return the records matching ADDRESS or nil."
     ;; Create a new record if nothing else fits.
     ;; In this way, we can fill the slots of the new record with
     ;; the same code that updates the slots of existing records.
-    (unless (or records bbdb-read-only
+    (unless (or records
                 (eq update-p 'update)
                 (not (or name mail)))
       ;; If there is no name, try to use the mail address as name
@@ -379,14 +387,12 @@ Return the records matching ADDRESS or nil."
                (or (null name)
                    (string= "" name)))
           (setq name (funcall bbdb-message-clean-name-function mail)))
-      (when (or (eq update-p 'create)
-                (and (eq update-p 'query)
-                     (y-or-n-p (format "%s is not in the BBDB.  Add? "
-                                       (or name mail)))))
-        (let ((record (make-vector bbdb-record-length nil)))
-          (bbdb-record-set-cache record (make-vector bbdb-cache-length nil))
-          (setq records (list record)
-                created-p t))))
+      (if (or (eq update-p 'create)
+              (and (eq update-p 'query)
+                   (y-or-n-p (format "%s is not in the BBDB.  Add? "
+                                     (or name mail)))))
+          (setq records (list (bbdb-empty-record))
+                created-p t)))
 
     (dolist (record records)
       (let* ((old-name (bbdb-record-name record))
@@ -395,10 +401,11 @@ Return the records matching ADDRESS or nil."
              (lname (cdr fullname))
              (mail mail) ;; possibly changed below
              (created-p created-p)
-             change-p add-mails add-name)
+             (update-p update-p)
+             change-p add-mails add-name ignore-redundant)
 
         ;; Analyze the name part of the record.
-        (cond ((or bbdb-read-only (not name)
+        (cond ((or (not name)
                    ;; The following tests can differ for more complicated names
                    (bbdb-string= name old-name)
                    (and (equal fname (bbdb-record-firstname record)) ; possibly
@@ -406,8 +413,7 @@ Return the records matching ADDRESS or nil."
                    (member-ignore-case name (bbdb-record-aka record)))) ; do nothing
 
               (created-p ; new record
-               (bbdb-record-set-field record 'name (cons fname lname))
-               (setq change-p 'sort))
+               (bbdb-record-set-field record 'name (cons fname lname)))
 
               ((not (setq add-name (bbdb-add-job bbdb-add-name record name)))) ; do nothing
 
@@ -444,17 +450,30 @@ Return the records matching ADDRESS or nil."
                 record 'aka (cons name (bbdb-record-aka record)))
                (setq change-p 'sort)))
 
-        ;; It's kind of a kludge that the "redundancy" concept is built in.
-        ;; Maybe I should just add a new hook here...  The problem is that
-        ;; `bbdb-canonicalize-mail' is run before database lookup,
-        ;; and thus it cannot refer to the database to determine whether a mail
-        ;; is redundant.
-        (if (and bbdb-canonicalize-redundant-mails mail)
-            (setq mail (or (bbdb-mail-redundant-p mail (bbdb-record-mail record))
-                           mail)))
+        ;; Is MAIL redundant compared with the mail addresses
+        ;; that are already known for RECORD?
+        (if (and mail
+                 (setq ignore-redundant
+                       (bbdb-add-job bbdb-ignore-redundant-mails record mail)))
+            (let ((mails (bbdb-record-mail-canon record))
+                  (case-fold-search t) redundant ml re)
+              (while (setq ml (pop mails))
+                (if (and (setq re (bbdb-mail-redundant-re ml))
+                         (string-match re mail))
+                    (setq redundant ml mails nil)))
+              (if redundant
+                  (cond ((numberp ignore-redundant)
+                         (unless bbdb-silent
+                           (message "%s: redundant mail `%s'"
+                                    (bbdb-record-name record) mail)
+                           (sit-for ignore-redundant)))
+                        ((or (eq t ignore-redundant)
+                             bbdb-silent
+                             (y-or-n-p (format "Ignore redundant mail %s?" mail)))
+                         (setq mail redundant))))))
 
         ;; Analyze the mail part of the new records
-        (cond ((or bbdb-read-only (not mail) (equal mail "???")
+        (cond ((or (not mail) (equal mail "???")
                    (member-ignore-case mail (bbdb-record-mail-canon record)))) ; do nothing
 
               (created-p ; new record
@@ -469,49 +488,88 @@ Return the records matching ADDRESS or nil."
                  (sit-for add-mails)))
 
               ((or (eq add-mails t) ; add it automatically
-                   (and (eq add-mails 'query)
-                        (or bbdb-silent
-                            (y-or-n-p (format "Add address \"%s\" to %s? " mail
-                                              (bbdb-record-name record)))
-                            (and (or (eq update-p 'create)
-                                     (and (eq update-p 'query)
-                                          (y-or-n-p
-                                           (format "Create a new record for %s? "
-                                                   (bbdb-record-name record)))))
-                                 (setq record (bbdb-create-internal
-                                               (cons fname lname))
-                                       created-p t)))))
-               ;; then modify RECORD
-               (bbdb-record-set-field
-                record 'mail
-                (if (bbdb-eval-spec (bbdb-add-job bbdb-new-mails-primary
-                                                  record mail)
-                                    (format "Make \"%s\" the primary address? " mail))
-                    (cons mail (bbdb-record-mail record))
-                  (nconc (bbdb-record-mail record) (list mail))))
-               (unless change-p (setq change-p t))))
+                   bbdb-silent
+                   (y-or-n-p (format "Add address \"%s\" to %s? " mail
+                                     (bbdb-record-name record)))
+                   (and (or (and (functionp update-p)
+                                 (progn (setq update-p (funcall update-p)) nil))
+                            (memq update-p '(t create))
+                            (and (eq update-p 'query)
+                                 (y-or-n-p
+                                  (format "Create a new record for %s? "
+                                          (bbdb-record-name record)))))
+                        (progn
+                          (setq record (bbdb-empty-record))
+                          (bbdb-record-set-name record fname lname)
+                          (setq created-p t))))
 
-        (if (and change-p (not bbdb-silent))
-            (if (eq change-p 'sort)
-                (message "noticed \"%s\"" (bbdb-record-name record))
-              (if (bbdb-record-name record)
-                  (message "noticed %s's address \"%s\""
-                           (bbdb-record-name record) mail)
-                (message "noticed naked address \"%s\"" mail))))
+               (let ((mails (bbdb-record-mail record)))
+                 (if ignore-redundant
+                     ;; Does the new address MAIL make an old address redundant?
+                     (let ((mail-re (bbdb-mail-redundant-re mail))
+                           (case-fold-search t) okay redundant)
+                       (dolist (ml mails)
+                         (if (string-match mail-re ml) ; redundant mail address
+                             (push ml redundant)
+                           (push ml okay)))
+                       (let ((form (format "redundant mail%s %s"
+                                           (if (< 1 (length redundant)) "s" "")
+                                           (bbdb-concat 'mail (nreverse redundant))))
+                             (name (bbdb-record-name record)))
+                         (if redundant
+                             (cond ((numberp ignore-redundant)
+                                    (unless bbdb-silent
+                                      (message "%s: %s" name form)
+                                      (sit-for ignore-redundant)))
+                                   ((or (eq t ignore-redundant)
+                                        bbdb-silent
+                                        (y-or-n-p (format "Delete %s: " form)))
+                                    (if (eq t ignore-redundant)
+                                        (message "%s: deleting %s" name form))
+                                    (setq mails okay)))))))
 
-        (if created-p (run-hook-with-args 'bbdb-create-hook record))
-        (if change-p (bbdb-change-record record (eq change-p 'sort) created-p))
+                 ;; then modify RECORD
+                 (bbdb-record-set-field
+                  record 'mail
+                  (if (and mails
+                           (bbdb-eval-spec (bbdb-add-job bbdb-new-mails-primary
+                                                         record mail)
+                                           (format "Make \"%s\" the primary address? " mail)))
+                      (cons mail mails)
+                    (nconc mails (list mail))))
+                 (unless change-p (setq change-p t)))))
+
+        (cond (created-p
+               (unless bbdb-silent
+                 (if (bbdb-record-name record)
+                     (message "created %s's record with address \"%s\""
+                              (bbdb-record-name record) mail)
+                   (message "created record with naked address \"%s\"" mail)))
+               (bbdb-change-record record t t))
+
+              (change-p
+               (unless bbdb-silent
+                 (cond ((eq change-p 'sort)
+                        (message "noticed \"%s\"" (bbdb-record-name record)))
+                       ((bbdb-record-name record)
+                        (message "noticed %s's address \"%s\""
+                                 (bbdb-record-name record) mail))
+                       (t
+                        (message "noticed naked address \"%s\"" mail))))
+               (bbdb-change-record record (eq change-p 'sort))))
+
         (let ((bbdb-notice-hook-pending t))
           (run-hook-with-args 'bbdb-notice-mail-hook record))
         (push record new-records)))
 
     (nreverse new-records)))
 
-(defun bbdb-mua-update-records (&optional header-class update-p)
+(defun bbdb-mua-update-records (&optional header-class update-p sort)
   "Wrapper for `bbdb-update-records'.
 HEADER-CLASS is defined in `bbdb-message-headers'.  If it is nil,
 use all classes in `bbdb-message-headers'.
-UPDATE-P is defined in `bbdb-update-records'."
+UPDATE-P is defined in `bbdb-update-records'.
+If SORT is non-nil, sort records according to `bbdb-record-lessp'."
   (let ((mua (bbdb-mua)))
     (save-current-buffer
       (cond ;; VM
@@ -521,26 +579,26 @@ UPDATE-P is defined in `bbdb-update-records'."
         (vm-error-if-folder-empty)
         (let ((enable-local-variables t))  ; ...or vm bind this to nil.
           (bbdb-update-records (bbdb-get-address-components header-class)
-                               update-p)))
+                               update-p sort)))
        ;; Gnus
        ((eq mua 'gnus)
         (set-buffer gnus-article-buffer)
         (bbdb-update-records (bbdb-get-address-components header-class)
-                             update-p))
+                             update-p sort))
        ;; MH-E
        ((eq mua 'mh)
         (if mh-show-buffer (set-buffer mh-show-buffer))
         (bbdb-update-records (bbdb-get-address-components header-class)
-                             update-p))
+                             update-p sort))
        ;; Rmail
        ((eq mua 'rmail)
         (set-buffer rmail-buffer)
         (bbdb-update-records (bbdb-get-address-components header-class)
-                             update-p))
+                             update-p sort))
        ;; Message and Mail
        ((memq mua '(message mail))
         (bbdb-update-records (bbdb-get-address-components header-class)
-                             update-p))))))
+                             update-p sort))))))
 
 (defmacro bbdb-mua-wrapper (&rest body)
   "Perform BODY in a MUA buffer."
@@ -564,7 +622,7 @@ UPDATE-P is defined in `bbdb-update-records'."
   "Interactive spec for arg UPDATE-P of `bbdb-mua-display-records' and friends.
 If these commands are called without a prefix, the value of their arg
 UPDATE-P is the car of the variable `bbdb-mua-update-interactive-p'.
-Called with a prefix, the value of UPDATE-P becomes the cdr of this variable."
+Called with a prefix, the value of UPDATE-P is the cdr of this variable."
   (let ((update-p (if current-prefix-arg
                       (cdr bbdb-mua-update-interactive-p)
                     (car bbdb-mua-update-interactive-p))))
@@ -588,7 +646,7 @@ This return value can be used as arg HORIZ-P of `bbdb-display-records'."
     fun))
 
 ;;;###autoload
-(defun bbdb-mua-display-records (&optional header-class update-p)
+(defun bbdb-mua-display-records (&optional header-class update-p all)
   "Display the BBDB record(s) for the addresses in this message.
 This looks into the headers of a message according to HEADER-CLASS.
 Then for the mail addresses found the corresponding BBDB records are displayed.
@@ -598,14 +656,20 @@ or whether also new records are created for these mail addresses.
 HEADER-CLASS is defined in `bbdb-message-headers'.  If it is nil,
 use all classes in `bbdb-message-headers'.
 UPDATE-P may take the same values as `bbdb-update-records-p'.
-For interactive calls, see function `bbdb-mua-update-interactive-p'."
+For interactive calls, see function `bbdb-mua-update-interactive-p'.
+If ALL is non-nil, bind `bbdb-message-all-addresses' to ALL."
   (interactive (list nil (bbdb-mua-update-interactive-p)))
   (let ((bbdb-pop-up-window-size bbdb-mua-pop-up-window-size)
+        (bbdb-message-all-addresses (or all bbdb-message-all-addresses))
         records)
     (bbdb-mua-wrapper
-     (setq records (bbdb-mua-update-records header-class update-p)))
+     (setq records (bbdb-mua-update-records header-class update-p t)))
     (if records (bbdb-display-records records nil nil nil (bbdb-mua-window-p)))
     records))
+
+;; The following commands are some frontends for `bbdb-mua-display-records',
+;; which is always doing the real work.  In your init file, you can further
+;; modify or adapt these simple commands to your liking.
 
 ;;;###autoload
 (defun bbdb-mua-display-sender (&optional update-p)
@@ -623,28 +687,45 @@ For interactive calls, see function `bbdb-mua-update-interactive-p'."
   (interactive (list (bbdb-mua-update-interactive-p)))
   (bbdb-mua-display-records 'recipients update-p))
 
-;; RW: This command appears to be obsolete
 ;;;###autoload
-(defun bbdb-display-all-recipients (&optional header-class)
-  "Display BBDB records for all addresses of the message in this buffer.
-If the records do not exist, they are generated."
-  (interactive)
-  (let ((bbdb-message-all-addresses t))
-    (bbdb-mua-display-records header-class 'create)))
+(defun bbdb-mua-display-all-records (&optional update-p)
+  "Display the BBDB record(s) for all addresses in this message.
+UPDATE-P may take the same values as `bbdb-update-records-p'.
+For interactive calls, see function `bbdb-mua-update-interactive-p'."
+  (interactive (list (bbdb-mua-update-interactive-p)))
+  (bbdb-mua-display-records nil update-p t))
 
+;;;###autoload
+(defun bbdb-mua-display-all-recipients (&optional update-p)
+  "Display BBDB records for all recipients of this message.
+UPDATE-P may take the same values as `bbdb-update-records-p'.
+For interactive calls, see function `bbdb-mua-update-interactive-p'."
+  (interactive (list (bbdb-mua-update-interactive-p)))
+  (bbdb-mua-display-records 'recipients update-p t))
+
+;; The commands `bbdb-annotate-record' and `bbdb-mua-edit-field'
+;; have kind of similar goals, yet they use rather different strategies.
+;; `bbdb-annotate-record' is less obtrusive.  It does not display
+;; the records it operates on, nor does it display the content
+;; of the field before or after adding or replacing the annotation.
+;; Hence the user needs to know what she is doing.
+;; `bbdb-mua-edit-field' is more explicit:  It displays the records
+;; as well as the current content of the field that gets edited.
+
+;; In principle, this function can be used not only with MUAs.
 (defun bbdb-annotate-record (record annotation &optional field replace)
-  "In RECORD add an ANNOTATION to FIELD.
-FIELD defaults to xfield `notes'.
-If REPLACE is non-nil, ANNOTATION replaces the content of FIELD."
+  "In RECORD add an ANNOTATION to field FIELD.
+FIELD defaults to `bbdb-annotate-field'.
+If REPLACE is non-nil, ANNOTATION replaces the content of FIELD.
+If ANNOTATION is an empty string and REPLACE is non-nil, delete FIELD."
   (if (memq field '(name firstname lastname phone address xfields))
       (error "Field `%s' illegal" field))
-  (unless (string= "" (setq annotation (bbdb-string-trim annotation)))
-    (cond ((memq field '(affix organization mail aka))
-           (setq annotation (list annotation)))
-          ((not field) (setq field 'notes)))
-    (bbdb-record-set-field record field annotation (not replace))
-    (bbdb-change-record record)
-    (bbdb-maybe-update-display record)))
+  (setq annotation (bbdb-string-trim annotation))
+  (cond ((memq field '(affix organization mail aka))
+         (setq annotation (list annotation)))
+        ((not field) (setq field bbdb-annotate-field)))
+  (bbdb-record-set-field record field annotation (not replace))
+  (bbdb-change-record record))
 
 ;; FIXME: For interactive calls of the following commands, the arg UPDATE-P
 ;; should have the same meaning as for `bbdb-mua-display-records',
@@ -662,77 +743,93 @@ If REPLACE is non-nil, ANNOTATION replaces the content of FIELD."
 ;; welcome!), this solution will hopefully include the current workaround
 ;; as a subset of all its features.
 
+(defun bbdb-mua-annotate-field-interactive ()
+  "Interactive specification for `bbdb-mua-annotate-sender' and friends."
+  (bbdb-editable)
+  (let ((field (if (eq 'all-fields bbdb-annotate-field)
+                   (intern (completing-read
+                            "Field: "
+                            (mapcar 'symbol-name
+                                    (append '(affix organization mail aka)
+                                            bbdb-xfield-label-list))))
+                 bbdb-annotate-field)))
+    (list (read-string (format "Annotate `%s': " field))
+          field current-prefix-arg
+          (car bbdb-mua-update-interactive-p))))
+
 ;;;###autoload
-(defun bbdb-mua-annotate-sender (string &optional replace update-p)
-  "Add STRING to notes field of the BBDB record(s) of message sender(s).
-If prefix REPLACE is non-nil, replace the existing notes entry (if any).
+(defun bbdb-mua-annotate-sender (annotation &optional field replace update-p)
+  "Add ANNOTATION to field FIELD of the BBDB record(s) of message sender(s).
+FIELD defaults to `bbdb-annotate-field'.
+If REPLACE is non-nil, ANNOTATION replaces the content of FIELD.
 UPDATE-P may take the same values as `bbdb-update-records-p'.
 For interactive calls, use car of `bbdb-mua-update-interactive-p'."
-  (interactive (list (read-string "Comments: ") current-prefix-arg
-                     (car bbdb-mua-update-interactive-p)))
+  (interactive (bbdb-mua-annotate-field-interactive))
   (bbdb-mua-wrapper
    (dolist (record (bbdb-mua-update-records 'sender update-p))
-     (bbdb-annotate-record record string 'notes replace))))
+     (bbdb-annotate-record record annotation field replace))))
 
 ;;;###autoload
-(defun bbdb-mua-annotate-recipients (string &optional replace update-p)
-  "Add STRING to notes field of the BBDB records of message recipients.
-If prefix REPLACE is non-nil, replace the existing notes entry (if any).
+(defun bbdb-mua-annotate-recipients (annotation &optional field replace
+                                                update-p)
+  "Add ANNOTATION to field FIELD of the BBDB records of message recipients.
+FIELD defaults to `bbdb-annotate-field'.
+If REPLACE is non-nil, ANNOTATION replaces the content of FIELD.
 UPDATE-P may take the same values as `bbdb-update-records-p'.
 For interactive calls, use car of `bbdb-mua-update-interactive-p'."
-  (interactive (list (read-string "Comments: ") current-prefix-arg
-                     (car bbdb-mua-update-interactive-p)))
+  (interactive (bbdb-mua-annotate-field-interactive))
   (bbdb-mua-wrapper
    (dolist (record (bbdb-mua-update-records 'recipients update-p))
-     (bbdb-annotate-record record string 'notes replace))))
+     (bbdb-annotate-record record annotation field replace))))
 
 (defun bbdb-mua-edit-field-interactive ()
-  "Interactive specification for `bbdb-mua-edit-field' and friends."
-  (list (if current-prefix-arg
+  "Interactive specification for command `bbdb-mua-edit-field' and friends."
+  (bbdb-editable)
+  (list (if (eq 'all-fields bbdb-mua-edit-field)
             (intern (completing-read
                      "Field: "
                      (mapcar 'symbol-name
                              (append '(name affix organization aka mail)
-                                     bbdb-xfield-label-list)))))
-        (car bbdb-mua-update-interactive-p)))
+                                     bbdb-xfield-label-list))))
+          bbdb-mua-edit-field)
+        (bbdb-mua-update-interactive-p)))
 
 ;;;###autoload
-(defun bbdb-mua-edit-field (field &optional update-p header-class)
+(defun bbdb-mua-edit-field (&optional field update-p header-class)
   "Edit FIELD of the BBDB record(s) of message sender(s) or recipients.
-FIELD defaults to 'notes.  With prefix arg, ask for FIELD.
+FIELD defaults to value of variable `bbdb-mua-edit-field'.
 UPDATE-P may take the same values as `bbdb-update-records-p'.
-For interactive calls, use car of `bbdb-mua-update-interactive-p'.
+For interactive calls, see function `bbdb-mua-update-interactive-p'.
 HEADER-CLASS is defined in `bbdb-message-headers'.  If it is nil,
 use all classes in `bbdb-message-headers'."
   (interactive (bbdb-mua-edit-field-interactive))
   (cond ((memq field '(firstname lastname address phone xfields))
          (error "Field `%s' not editable this way" field))
         ((not field)
-         (setq field 'notes)))
+         (setq field bbdb-mua-edit-field)))
   (bbdb-mua-wrapper
    (let ((records (bbdb-mua-update-records header-class update-p))
          (bbdb-pop-up-window-size bbdb-mua-pop-up-window-size))
      (when records
        (bbdb-display-records records nil nil nil (bbdb-mua-window-p))
        (dolist (record records)
-         (bbdb-edit-field record field)
-         (bbdb-maybe-update-display record))))))
+         (bbdb-edit-field record field))))))
 
 ;;;###autoload
 (defun bbdb-mua-edit-field-sender (&optional field update-p)
   "Edit FIELD of record corresponding to sender of this message.
-FIELD defaults to 'notes.  With prefix arg, ask for FIELD.
+FIELD defaults to value of variable `bbdb-mua-edit-field'.
 UPDATE-P may take the same values as `bbdb-update-records-p'.
-For interactive calls, use car of `bbdb-mua-update-interactive-p'."
+For interactive calls, see function `bbdb-mua-update-interactive-p'."
   (interactive (bbdb-mua-edit-field-interactive))
   (bbdb-mua-edit-field field update-p 'sender))
 
 ;;;###autoload
 (defun bbdb-mua-edit-field-recipients (&optional field update-p)
   "Edit FIELD of record corresponding to recipient of this message.
-FIELD defaults to 'notes.  With prefix arg, ask for FIELD.
+FIELD defaults to value of variable `bbdb-mua-edit-field'.
 UPDATE-P may take the same values as `bbdb-update-records-p'.
-For interactive calls, use car of `bbdb-mua-update-interactive-p'."
+For interactive calls, see function `bbdb-mua-update-interactive-p'."
   (interactive (bbdb-mua-edit-field-interactive))
   (bbdb-mua-edit-field field update-p 'recipients))
 
@@ -804,7 +901,7 @@ See `bbdb-mua-auto-update' for details about the auto update feature."
   "Automatically annotate RECORD based on the headers of the current message.
 See the variables `bbdb-auto-notes-rules', `bbdb-auto-notes-ignore-messages'
 and `bbdb-auto-notes-ignore-headers'.
-For use as an element of `bbdb-notice-mail-hook'."
+For use as an element of `bbdb-notice-record-hook'."
   ;; This code re-evaluates the annotations each time a message is viewed.
   ;; It would be faster if we could somehow store (permanently?) that we
   ;; have already annotated a message.
@@ -826,6 +923,7 @@ For use as an element of `bbdb-notice-mail-hook'."
                                     (bbdb-message-header-re (nth 1 rule) (nth 2 rule)))))
                         (setq ignore t)))
                   ignore))
+      (bbdb-editable)
 
       ;; For speed-up expanded rules are stored in `bbdb-auto-notes-rules-expanded'.
       (when (and bbdb-auto-notes-rules
@@ -851,7 +949,7 @@ For use as an element of `bbdb-notice-mail-hook'."
                           replace (nth 2 string) ; perhaps nil
                           string (nth 1 string))
                   ;; else it's simple (REGEXP . STRING)
-                  (setq field 'notes
+                  (setq field bbdb-default-xfield
                         replace nil))
                 (push (list (car elt) field string replace) elt-e))
               (push (append (list mua from-to header) (nreverse elt-e)) expanded)))
@@ -884,168 +982,6 @@ For use as an element of `bbdb-notice-mail-hook'."
                             (t (error "Illegal value: %s" string))))
                 (bbdb-annotate-record record annotation
                                       (nth 1 elt) (nth 3 elt))))))))))
-
-;;; Massage of mail addresses
-
-(defcustom bbdb-canonical-hosts
-  ;; Example
-  (regexp-opt '("cs.cmu.edu" "ri.cmu.edu"))
-  "Regexp matching the canonical part of the domain part of a mail address.
-If the domain part of a mail address matches this regexp, the domain
-is replaced by the substring that actually matched this address.
-
-Certain sites have a single mail-host; for example, all mail originating
-at hosts whose names end in \".cs.cmu.edu\" can (and probably should) be
-sent to \"user@cs.cmu.edu\" instead.  Customize `bbdb-canonical-hosts'
-for this.
-
-Used by  `bbdb-canonicalize-mail-1'"
-  :group 'bbdb-mua
-  :type '(regexp :tag "Regexp matching sites"))
-
-;;;###autoload
-(defun bbdb-canonicalize-mail-1 (address)
-  "Example of `bbdb-canonicalize-mail-function'."
-  (setq address (bbdb-string-trim address))
-  (cond
-   ;;
-   ;; rewrite mail-drop hosts.
-   ((string-match
-     (concat "\\`\\([^@%!]+@\\).*\\.\\(" bbdb-canonical-hosts "\\)\\'")
-     address)
-    (concat (match-string 1 address) (match-string 2 address)))
-   ;;
-   ;; Here at Lucid, our workstation names sometimes get into our mail
-   ;; addresses in the form "jwz%thalidomide@lucid.com" (instead of simply
-   ;; "jwz@lucid.com").  This removes the workstation name.
-   ((string-match "\\`\\([^@%!]+\\)%[^@%!.]+@\\(lucid\\.com\\)\\'" address)
-    (concat (match-string 1 address) "@" (match-string 2 address)))
-   ;;
-   ;; Another way that our local mailer is misconfigured: sometimes addresses
-   ;; which should look like "user@some.outside.host" end up looking like
-   ;; "user%some.outside.host" or even "user%some.outside.host@lucid.com"
-   ;; instead.  This rule rewrites it into the original form.
-   ((string-match "\\`\\([^@%]+\\)%\\([^@%!]+\\)\\(@lucid\\.com\\)?\\'" address)
-    (concat (match-string 1 address) "@" (match-string 2 address)))
-   ;;
-   ;; Sometimes I see addresses like "foobar.com!user@foobar.com".
-   ;; That's totally redundant, so this rewrites it as "user@foobar.com".
-   ((string-match "\\`\\([^@%!]+\\)!\\([^@%!]+[@%]\\1\\)\\'" address)
-    (match-string 2 address))
-   ;;
-   ;; Sometimes I see addresses like "foobar.com!user".  Turn it around.
-   ((string-match "\\`\\([^@%!.]+\\.[^@%!]+\\)!\\([^@%]+\\)\\'" address)
-    (concat (match-string 2 address) "@" (match-string 1 address)))
-   ;;
-   ;; The mailer at hplb.hpl.hp.com tends to puke all over addresses which
-   ;; pass through mailing lists which are maintained there: it turns normal
-   ;; addresses like "user@foo.com" into "user%foo.com@hplb.hpl.hp.com".
-   ;; This reverses it.  (I actually could have combined this rule with
-   ;; the similar lucid.com rule above, but then the regexp would have been
-   ;; more than 80 characters long...)
-   ((string-match "\\`\\([^@!]+\\)%\\([^@%!]+\\)@hplb\\.hpl\\.hp\\.com\\'"
-          address)
-    (concat (match-string 1 address) "@" (match-string 2 address)))
-   ;;
-   ;; Another local mail-configuration botch: sometimes mail shows up
-   ;; with addresses like "user@workstation", where "workstation" is a
-   ;; local machine name.  That should really be "user" or "user@netscape.com".
-   ;; (I'm told this one is due to a bug in SunOS 4.1.1 sendmail.)
-   ((string-match "\\`\\([^@%!]+\\)[@%][^@%!.]+\\'" address)
-    (match-string 1 address))
-   ;;
-   ;; Sometimes I see addresses like "foo%somewhere%uunet.uu.net@somewhere.else".
-   ;; This is silly, because I know that I can send mail to uunet directly.
-   ((string-match ".%uunet\\.uu\\.net@[^@%!]+\\'" address)
-    (concat (substring address 0 (+ (match-beginning 0) 1)) "@UUNET.UU.NET"))
-   ;;
-   ;; Otherwise, leave it as it is.  Returning a string equal to the one
-   ;; passed in tells BBDB that we are done.
-   (t address)))
-
-;;; Here is another approach not requiring the configuration of a user variable
-;;; such as `bbdb-canonical-hosts'.
-;;;
-;;; Sometimes one gets mail from foo@bar.baz.com, and then later gets mail
-;;; from foo@baz.com.  At this point, one would like to delete the bar.baz.com
-;;; address, since the baz.com address is obviously superior.
-
-(defun bbdb-mail-redundant-p (mail old-mails)
-  "Return non-nil if MAIL is a sub-domain of one of the OLD-MAILS.
-The return value is the address which makes this one redundant.
-For example, \"foo@bar.baz.com\" is redundant w.r.t. \"foo@baz.com\",
-and \"foo@quux.bar.baz.com\" is redundant w.r.t. \"foo@bar.baz.com\".
-
-See also `bbdb-canonicalize-redundant-mails'."
-  (let (redundant-address)
-    (while (and (not redundant-address) old-mails)
-      ;; Calculate a host-regexp for each address in OLD-MAILS
-      (let* ((old (car old-mails))
-             (host-index (string-match "@" old))
-             (name (and host-index (substring old 0 host-index)))
-             (host (and host-index (substring old (1+ host-index))))
-             ;; host-regexp is "^<name>@.*\.<host>$"
-             (host-regexp (and name host
-                               (concat "\\`" (regexp-quote name)
-                                       "@.*\\." (regexp-quote host)
-                                       "\\'"))))
-        ;; If MAIL matches host-regexp, then it is redundant
-        (if (and host-regexp mail
-                 (string-match host-regexp mail))
-            (setq redundant-address old)))
-      (setq old-mails (cdr old-mails)))
-    redundant-address))
-
-(defun bbdb-delete-redundant-mails (record)
-  "Delete redundant mail addresses of RECORD.
-For use as a value of `bbdb-change-hook'.  See also `bbdb-mail-redundant-p'."
-  (let ((mails (bbdb-record-mail record))
-         okay redundant)
-    (dolist (mail mails)
-      (if (bbdb-mail-redundant-p mail mails)
-          (push mail redundant)
-        (push mail okay)))
-    (when redundant
-      (message "Deleting redundant mails %s..."
-               (bbdb-concat 'mail (nreverse redundant)))
-      (bbdb-record-set-mail record (nreverse okay)))))
-
-(defun bbdb-message-clean-name-default (name)
-  "Default function for `bbdb-message-clean-name-function'.
-This strips garbage from the user full NAME string."
-  ;; Remove leading non-alpha chars
-  (if (string-match "\\`[^[:alpha:]]+" name)
-      (setq name (substring name (match-end 0))))
-
-  (if (string-match "^\\([^@]+\\)@" name)
-      ;; The name is really a mail address and we use the part preceeding "@".
-      ;; Everything following "@" is ignored.
-      (setq name (match-string 1 name)))
-
-  ;; Replace "firstname.surname" by "firstname surname".
-  ;; Do not replace ". " with " " because that could be an initial.
-  (setq name (replace-regexp-in-string "\\.\\([^ ]\\)" " \\1" name))
-
-  ;; Replace tabs, spaces, and underscores with a single space.
-  (setq name (replace-regexp-in-string "[ \t\n_]+" " " name))
-
-  ;; Remove trailing comments separated by "(" or " [-#]"
-  ;; This does not work all the time because some of our friends in
-  ;; northern europe have brackets in their names...
-  (if (string-match "[^ \t]\\([ \t]*\\((\\| [-#]\\)\\)" name)
-      (setq name (substring name 0 (match-beginning 1))))
-
-  ;; Remove phone extensions (like "x1234" and "ext. 1234")
-  (let ((case-fold-search t))
-    (setq name (replace-regexp-in-string
-                "\\W+\\(x\\|ext\\.?\\)\\W*[-0-9]+" "" name)))
-
-  ;; Remove trailing non-alpha chars
-  (if (string-match "[^[:alpha:]]+\\'" name)
-      (setq name (substring name 0 (match-beginning 0))))
-
-  ;; Remove text properties
-  (substring-no-properties name))
 
 ;;; Mark BBDB records in the MUA summary buffer
 

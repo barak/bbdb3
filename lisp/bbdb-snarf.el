@@ -1,7 +1,7 @@
 ;;; bbdb-snarf.el -- convert free-form text to BBDB records
 
 ;; Copyright (C) 1997 John Heidemann <johnh@isi.edu>
-;; Copyright (C) 2010-2013 Roland Winkler <winkler@gnu.org>
+;; Copyright (C) 2010-2014 Roland Winkler <winkler@gnu.org>
 
 ;; This file is part of the Insidious Big Brother Database (aka BBDB),
 
@@ -256,7 +256,7 @@ NANP is the North American Numbering Plan used in North and Central America."
     (bbdb-record-set-xfields
      record
      (nconc (bbdb-record-xfields record)
-            (list (cons 'notes (buffer-string)))))
+            (list (cons bbdb-default-xfield (buffer-string)))))
     (erase-buffer)))
 
 (defsubst bbdb-snarf-rule-interactive ()
@@ -264,7 +264,8 @@ NANP is the North American Numbering Plan used in North and Central America."
   (intern
    (completing-read
     (format "Rule: (default `%s') " bbdb-snarf-rule-default)
-    bbdb-snarf-rule-alist nil t nil nil bbdb-snarf-rule-default)))
+    bbdb-snarf-rule-alist nil t nil nil
+    (symbol-name bbdb-snarf-rule-default))))
 
 ;;;###autoload
 (defun bbdb-snarf-paragraph (pos &optional rule)
@@ -294,7 +295,7 @@ See `bbdb-snarf-rule-alist' for details."
 
 ;;;###autoload
 (defun bbdb-snarf (string &optional rule)
-  "Snarf a BBDB record in STRING using RULE.
+  "Snarf a BBDB record in STRING using RULE.  Return this record.
 Interactively, STRING is the current region.
 RULE defaults to `bbdb-snarf-rule-default'.
 See `bbdb-snarf-rule-alist' for details."
@@ -302,8 +303,8 @@ See `bbdb-snarf-rule-alist' for details."
    (list (buffer-substring-no-properties (region-beginning) (region-end))
          (bbdb-snarf-rule-interactive)))
 
-  (let ((record (make-vector bbdb-record-length nil)))
-    (bbdb-record-set-cache record (make-vector bbdb-cache-length nil))
+  (bbdb-editable)
+  (let ((record (bbdb-empty-record)))
     (with-current-buffer (get-buffer-create " *BBDB Snarf*")
       (erase-buffer)
       (insert (substring-no-properties string))
@@ -320,9 +321,9 @@ See `bbdb-snarf-rule-alist' for details."
       (if old-record
           (bbdb-merge-records old-record record)
         ;; create new record
-        (run-hook-with-args 'bbdb-create-hook record)
         (bbdb-change-record record t t)
-        (bbdb-display-records (list record))))))
+        (bbdb-display-records (list record))
+        record))))
 
 ;; Some test cases
 ;;
