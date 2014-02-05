@@ -1981,7 +1981,18 @@ INIT appears as initial input which is useful for editing existing records.
 COLLECTION and REQUIRE-MATCH have the same meaning as in `completing-read'."
   (bbdb-string-trim
    (if collection
-       (completing-read prompt collection nil require-match init)
+       ;; Hack: In `minibuffer-local-completion-map' remove
+       ;; the binding of SPC to `minibuffer-complete-word'
+       ;; and of ? to `minibuffer-completion-help'.
+       (minibuffer-with-setup-hook
+           (lambda ()
+             (use-local-map
+              (let ((map (make-sparse-keymap)))
+                (set-keymap-parent map (current-local-map))
+                (define-key map " " nil)
+                (define-key map "?" nil)
+                map)))
+         (completing-read prompt collection nil require-match init))
      (read-string prompt init))))
 
 (defun bbdb-add-to-list (list-var element)
@@ -2337,7 +2348,7 @@ KEY must be a string or nil.  Empty strings and nil are ignored."
   (if (and key (not (string= "" key))) ; do not hash empty strings
       (let ((sym (intern (downcase key) bbdb-hashtable)))
         (if (boundp sym)
-            (add-to-list sym record 'eq)
+            (add-to-list sym record nil 'eq)
           (set sym (list record))))))
 
 (defun bbdb-gethash (key &optional predicate)
@@ -2541,7 +2552,7 @@ If VALUE is nil, remove xfield LABEL from RECORD.  Return VALUE."
   (if (memq label '(name firstname lastname affix organization
                          mail aka phone address xfields))
       (error "xfield label `%s' illegal" label))
-  (add-to-list 'bbdb-xfield-label-list label 'eq)
+  (add-to-list 'bbdb-xfield-label-list label nil 'eq)
   (if (eq label 'mail-alias)
       (setq bbdb-mail-aliases-need-rebuilt 'edit))
   (if (and value (string= "" value)) (setq value nil))
@@ -2772,7 +2783,7 @@ See also `bbdb-record-field'."
                                                    value 'equal)))
            (if check (bbdb-check-type value (bbdb-record-phone record-type) t))
            (dolist (phone value)
-             (add-to-list 'bbdb-phone-label-list (bbdb-phone-label phone) 'eq))
+             (add-to-list 'bbdb-phone-label-list (bbdb-phone-label phone) nil 'eq))
            (bbdb-record-set-phone record value))
 
           ;; Address
@@ -2781,7 +2792,7 @@ See also `bbdb-record-field'."
                                                    value 'equal)))
            (if check (bbdb-check-type value (bbdb-record-address record-type) t))
            (dolist (address value)
-             (add-to-list 'bbdb-address-label-list (bbdb-address-label address) 'eq)
+             (add-to-list 'bbdb-address-label-list (bbdb-address-label address) nil 'eq)
              (mapc (lambda (street) (bbdb-add-to-list 'bbdb-street-list street))
                    (bbdb-address-streets address))
              (bbdb-add-to-list 'bbdb-city-list (bbdb-address-city address))
@@ -2803,7 +2814,7 @@ See also `bbdb-record-field'."
                ;; Ignore junk
                (when (and (cdr xfield) (not (string= "" (cdr xfield))))
                  (push xfield new-xfields)
-                 (add-to-list 'bbdb-xfield-label-list (car xfield) 'eq)))
+                 (add-to-list 'bbdb-xfield-label-list (car xfield) nil 'eq)))
              (bbdb-record-set-xfields record new-xfields)))
 
           ;; Single xfield
@@ -3199,9 +3210,9 @@ If `bbdb-file' uses an outdated format, it is migrated to `bbdb-file-format'."
 
           ;; Set the completion lists
           (dolist (phone (bbdb-record-phone record))
-            (add-to-list 'bbdb-phone-label-list (bbdb-phone-label phone) 'eq))
+            (add-to-list 'bbdb-phone-label-list (bbdb-phone-label phone) nil 'eq))
           (dolist (address (bbdb-record-address record))
-            (add-to-list 'bbdb-address-label-list (bbdb-address-label address) 'eq)
+            (add-to-list 'bbdb-address-label-list (bbdb-address-label address) nil 'eq)
             (mapc (lambda (street) (bbdb-add-to-list 'bbdb-street-list street))
                   (bbdb-address-streets address))
             (bbdb-add-to-list 'bbdb-city-list (bbdb-address-city address))
@@ -3209,7 +3220,7 @@ If `bbdb-file' uses an outdated format, it is migrated to `bbdb-file-format'."
             (bbdb-add-to-list 'bbdb-postcode-list (bbdb-address-postcode address))
             (bbdb-add-to-list 'bbdb-country-list (bbdb-address-country address)))
           (dolist (xfield (bbdb-record-xfields record))
-            (add-to-list 'bbdb-xfield-label-list (car xfield) 'eq))
+            (add-to-list 'bbdb-xfield-label-list (car xfield) nil 'eq))
           (dolist (organization (bbdb-record-organization record))
             (add-to-list 'bbdb-organization-list organization))
 
@@ -3236,11 +3247,13 @@ If `bbdb-file' uses an outdated format, it is migrated to `bbdb-file-format'."
           ;; `bbdb-allow-duplicates' is nil.
           (bbdb-hash-record record))
 
-        ;; We should remove those xfields from `bbdb-xfield-label-list'
-        ;; that are handled automatically.  Yet those xfields that are
-        ;; omitted in multiline layout are generally a superset of the
-        ;; fields that are handled automatically.  So the following is
-        ;; not a satisfactory solution.
+        ;; Note that `bbdb-xfield-label-list' serves two purposes:
+        ;;  - check whether an xfield is new to BBDB
+        ;;  - list of known xfields for minibuffer completion
+        ;; Only in the latter case, we might want to exclude
+        ;; those xfields that are handled automatically.
+        ;; So the following is not a satisfactory solution.
+
         ;; (dolist (label (bbdb-layout-get-option 'multi-line 'omit))
         ;;   (setq bbdb-xfield-label-list (delq label bbdb-xfield-label-list)))
 
@@ -3312,7 +3325,7 @@ responsibility to update the hash-table for RECORD."
          (bbdb-insert-record-internal record)
          (bbdb-hash-record record))
         (t (error "Changes are lost.")))
-  (add-to-list 'bbdb-changed-records record 'eq)
+  (add-to-list 'bbdb-changed-records record nil 'eq)
   (run-hook-with-args 'bbdb-after-change-hook record)
   record)
 
@@ -3383,7 +3396,7 @@ that calls the hooks, too."
       (goto-char (if next
                      (bbdb-record-marker next)
                    bbdb-end-marker)))
-    ;; Before printing the record, remove the cache (we do not want that
+    ;; Before writing the record, remove the cache (we do not want that
     ;; written to the file.)  After writing, put the cache back and update
     ;; the cache's marker.
     (let ((cache (bbdb-record-cache record))
