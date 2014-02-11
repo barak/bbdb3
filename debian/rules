@@ -11,6 +11,9 @@ override_dh_auto_configure:
 		--docdir='$${datarootdir}/doc/bbdb3' \
 		--with-lispdir='$${datadir}/emacs/site-lisp/bbdb3'
 
+override_dh_auto_build:
+	dh_auto_build -- pkgdatadir='$${datarootdir}/bbdb3'
+
 override_dh_auto_install:
 	dh_auto_install -- pkgdatadir='$${datarootdir}/bbdb3'
 	@echo "Deleting compiled elisp from installation tree, as compilation"

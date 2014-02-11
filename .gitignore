@@ -3,6 +3,7 @@
 /lisp/bbdb-loaddefs.el
 /lisp/bbdb-site.el
 /lisp/bbdb-pkg.el
+/lisp/bbdb-print-tex-path.el
 /lisp/TAGS
 /doc/bbdb.pdf
 /doc/bbdb.t2p/
