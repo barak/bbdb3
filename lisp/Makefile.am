@@ -38,7 +38,8 @@ dist_lisp_LISP = 				\
 	bbdb-site.el
 
 dist_lisp_LISP += bbdb-uuid.el
-lisp_LISP = bbdb-print-tex-path.el
+
+dist_lisp_LISP += bbdb-print-tex-path.el
 
 if VM
 dist_lisp_LISP += bbdb-vm.el
@@ -51,7 +52,10 @@ lisp_DATA = bbdb-loaddefs.el
 MOSTLYCLEANFILES = bbdb-loaddefs.el
 CLEANFILES = bbdb-site.el bbdb-pkg.el
 
-EXTRA_DIST = bbdb-site.el.in bbdb-pkg.el.in
+# The Emacs function define-package is not autoloaded.
+# So we assume we need not compile bbdb-pkg.el (which otherwise
+# results in a compiler warning that define-package is not defined).
+EXTRA_DIST = bbdb-site.el.in bbdb-pkg.el.in bbdb-pkg.el
 
 bbdb-loaddefs.el: $(dist_lisp_LISP)
 #	2011-12-11: We switched from bbdb-autoloads.el to bbdb-loaddefs.el.
