@@ -46,8 +46,6 @@
   (autoload 'bbdb-dwim-mail "bbdb-com")
   (autoload 'bbdb-layout-prefix "bbdb-com")
   (autoload 'bbdb-completing-read-records "bbdb-com")
-  (autoload 'bbdb-search "bbdb-com")
-  (autoload 'bbdb-search-prompt "bbdb-com")
   (autoload 'bbdb-genuuid "bbdb-uuid")
   (autoload 'mail-position-on-field "sendmail")
   (autoload 'vm-select-folder-buffer "vm-folder")
@@ -183,14 +181,13 @@ to set this to t in all but one of them."
                  (const :tag "Database is writable" nil)))
 
 (defcustom bbdb-auto-revert nil
-  "If t revert unchanged database without prompting.
-If t and `bbdb-file' has changed on disk, while you have not modified
-the database in memory, the database will be automatically reverted
-without prompting you first.  Otherwise you will be asked.
-But if `bbdb-file' has changed while you have made changes in memory as well,
-you will always be asked."
+  "If t revert unchanged database without querying.
+If t and `bbdb-file' has changed on disk, while the database
+has not been modified inside Emacs, revert the database automatically.
+If nil or the database has been changed inside Emacs, always query
+before reverting."
   :group 'bbdb
-  :type '(choice (const :tag "Revert unchanged database without prompting" t)
+  :type '(choice (const :tag "Revert unchanged database without querying" t)
                  (const :tag "Ask before reverting database")))
 
 (defcustom bbdb-check-auto-save-file nil
@@ -281,7 +278,7 @@ Note that this can be called more than once if the BBDB is reverted."
 (defcustom bbdb-silent nil
   "If t, BBDB suppresses all its informational messages and queries.
 Be very very certain you want to set this to t, because it will suppress
-prompting to alter record names, assign names to addresses, etc.
+queries to alter record names, assign names to addresses, etc.
 Lisp Hackers: See also `bbdb-silent-internal'."
   :group 'bbdb
   :type '(choice (const :tag "Run silently" t)
@@ -473,10 +470,10 @@ and formatting the address.
 
 IDENTIFIER may be a list of countries.
 IDENTIFIER may also be a function that is called with one arg, the address
-to be used.  The rule is used if the function returns non-nil.
+to be used.  The rule applies if the function returns non-nil.
 See `bbdb-address-continental-p' for an example.
-If IDENTIFIER is t, EDIT and FORMAT is used for all entries.
-Usually, this should be the last rule that becomes a fall-back (default).
+If IDENTIFIER is t, this rule always applies.  Usually, this should be
+the last rule that becomes a fall-back (default).
 
 EDIT may be a function that is called with one argument, the address.
 See `bbdb-edit-address-default' for an example.
@@ -648,7 +645,7 @@ Its first parenthetical subexpression becomes the suffix."
   :type 'regexp)
 
 (defcustom bbdb-default-domain nil
-  "Default domain to append when prompting for a new mail address.
+  "Default domain to append when reading a new mail address.
 If a mail address does not contain `[@%!]', append @`bbdb-default-domain' to it.
 
 The address is not altered if `bbdb-default-domain' is nil
@@ -669,7 +666,7 @@ prefix argument to the command `bbdb-insert-field'."
                  (const :tag "none" nil)))
 
 (defcustom bbdb-default-area-code nil
-  "Default area code to use when prompting for a new phone number.
+  "Default area code to use when reading a new phone number.
 This variable also affects dialing."
   :group 'bbdb-record-edit
   :type '(choice (const :tag "none" nil)
@@ -882,7 +879,7 @@ by `bbdb-select-message'):
  a function   This functions will be called with no arguments.
                 It should return one of the above values."
   ;; Also: Used for communication between `bbdb-update-records'
-  ;; and `bbdb-prompt-for-create'.
+  ;; and `bbdb-query-create'.
   :group 'bbdb-mua
   :type '(choice (const :tag "do nothing" nil)
                  (const :tag "search for existing records" search)
@@ -1702,11 +1699,11 @@ Calls of `bbdb-change-hook' are suppressed when this is non-nil.")
   "Controls the behavior of the command `bbdb-append-display'.")
 
 (defvar bbdb-offer-to-create nil
-  "For communication between `bbdb-update-records' and `bbdb-prompt-for-create'.")
+  "For communication between `bbdb-update-records' and `bbdb-query-create'.")
 
 (defvar bbdb-update-records-address nil
-  "For communication between `bbdb-update-records' and `bbdb-prompt-for-create'.
-It is a list (NAME MAIL HEADER HEADER-CLASS MUA).")
+  "For communication between `bbdb-update-records' and `bbdb-query-create'.
+It is a list with elements (NAME MAIL HEADER HEADER-CLASS MUA).")
 
 ;;; Buffer-local variables for the database.
 (defvar bbdb-records nil
@@ -2965,6 +2962,8 @@ Do this only if `bbdb-check-postcode' is non-nil."
 
 (defun bbdb-buffer ()
   "Return buffer that visits the BBDB file `bbdb-file'.
+Ensure that this buffer is in sync with `bbdb-file'.
+Revert the buffer if necessary.
 If `bbdb-file-remote' is non-nil and it is newer than `bbdb-file',
 copy it to `bbdb-file'."
   (unless (buffer-live-p bbdb-buffer)
@@ -3000,7 +2999,7 @@ copy it to `bbdb-file'."
           ;; preceeding question again and again some large (but finite)
           ;; number of times.  `bbdb-buffer' is called a lot, you see...
           ((buffer-modified-p)
-           ;; this prompts
+           ;; this queries
            (bbdb-save t t))
           (t ; Buffer and file are inconsistent, but we let them stay that way
            (message "Continuing with inconsistent BBDB buffers")))
@@ -3090,6 +3089,7 @@ This function also notices if the corresponding file on disk has been modified."
 (defun bbdb-revert-buffer (&optional ignore-auto noconfirm)
   "The `revert-buffer-function' for `bbdb-buffer' visiting `bbdb-file'.
 IGNORE-AUTO and NOCONFIRM have same meaning as in `revert-buffer'.
+See also variable `bbdb-auto-revert'.
 Return t if the reversion was successful (or not needed).
 Return nil otherwise."
   (interactive (list (not current-prefix-arg))) ; as in `revert-buffer'
@@ -4233,7 +4233,8 @@ There are numerous hooks.  M-x apropos ^bbdb.*hook RET
            (if (stringp field) field
              (vector (symbol-name field)
                      `(bbdb-insert-field
-                       ,record ',field (bbdb-prompt-for-new-field ,record ',field))
+                       ,record ',field (bbdb-read-field ,record ',field
+                                                        ,current-prefix-arg))
                      (not (or (and (eq field 'affix) (bbdb-record-affix record))
                               (and (eq field 'organization)
                                    (bbdb-record-organization record))
