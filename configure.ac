@@ -47,7 +47,7 @@ AC_SUBST([AM_ELCFLAGS])
 
 AC_CONFIG_FILES([Makefile
                  lisp/Makefile
-                 lisp/bbdb-site.el
+                 lisp/bbdb-site-pre-sed.el
                  lisp/bbdb-pkg.el
                  doc/Makefile
                  tex/Makefile])
