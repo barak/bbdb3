@@ -27,6 +27,9 @@
 (defconst bbdb-version-date "@PACKAGE_DATE@"
   "Version date of BBDB.")
 
-(require 'bbdb-print-tex-path)
+(defcustom bbdb-print-tex-path '("/usr/local/share")
+  "List of directories with the BBDB tex files."
+  :group 'bbdb-utilities-print
+  :type '(repeat (directory :tag "Directory")))
 
 (provide 'bbdb-site)
