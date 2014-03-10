@@ -1,7 +1,6 @@
 *.elc
 *.info
 /lisp/bbdb-loaddefs.el
-/lisp/bbdb-site-pre-sed.el
 /lisp/bbdb-site.el
 /lisp/bbdb-pkg.el
 /lisp/TAGS
