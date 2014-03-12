@@ -53,7 +53,7 @@ CLEANFILES = bbdb-site.el bbdb-pkg.el
 # The Emacs function define-package is not autoloaded.
 # So we assume we need not compile bbdb-pkg.el (which otherwise
 # results in a compiler warning that define-package is not defined).
-EXTRA_DIST = bbdb-pkg.el bbdb-site.el.in
+EXTRA_DIST = bbdb-site.el.in bbdb-pkg.el.in bbdb-pkg.el
 
 bbdb-loaddefs.el: $(dist_lisp_LISP)
 #	2011-12-11: We switched from bbdb-autoloads.el to bbdb-loaddefs.el.
@@ -77,9 +77,11 @@ bbdb-loaddefs.el: $(dist_lisp_LISP)
 		--eval '(setq make-backup-files nil)' \
 		-f batch-update-autoloads $(srcdir)
 
-# Generate bbdb-site.el here as the true pkgdatadir is only sure to be
-# known at "make" time.  Warning: the sed expressions will break if
-# PACKAGE_VERSION, PACKAGE_DATE, or pkgdatadir contain '='.
+# Generate bbdb-site.el here as pkgdatadir is only known at "make" time.
+# We protect the autoconf variables in the sed regular expressions
+# so as not to substitute them when processing Makefile.am.
+# Warning: the sed expressions will break if PACKAGE_VERSION, PACKAGE_DATE,
+# or pkgdatadir contain '='.
 
 bbdb-site.el: $(top_builddir)/config.status bbdb-site.el.in
 	sed -e "s=[@]pkgdatadir[@]=$(pkgdatadir)=" \
@@ -87,5 +89,5 @@ bbdb-site.el: $(top_builddir)/config.status bbdb-site.el.in
 	    -e "s=[@]PACKAGE_DATE[@]=$(PACKAGE_DATE)=" \
 	    < $@.in > $@
 
-# be sure bbdb-site.el exists early for "(require 'bbdb-site)"
+# Be sure bbdb-site.el exists early for "(require 'bbdb-site)"
 BUILT_SOURCES = bbdb-site.el
