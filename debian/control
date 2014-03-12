@@ -8,8 +8,8 @@ Build-Depends: debhelper (>= 9),
 	       emacs | emacs24-nox | emacs24 | emacs23-nox | emacs23
 Standards-Version: 3.9.5
 Homepage: http://savannah.nongnu.org/projects/bbdb/
-Vcs-Git: git://git.debian.org/collab-maint/bbdb3.git
-Vcs-Browser: http://git.debian.org/?p=collab-maint/bbdb3.git;a=summary
+Vcs-Git: git://anonscm.debian.org/collab-maint/bbdb3.git
+Vcs-Browser: http://anonscm.debian.org/gitweb/?p=collab-maint/bbdb3.git
 
 Package: bbdb3
 Architecture: all
