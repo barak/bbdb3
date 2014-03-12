@@ -31,6 +31,7 @@ FLAGS="${SITEFLAG} --no-init-file --batch --load path.el --funcall batch-byte-co
 
 ELDIR=/usr/share/emacs/site-lisp/${PACKAGE}
 ELCDIR=/usr/share/${FLAVOR}/site-lisp/${PACKAGE}
+ELRELDIR=../../../emacs/site-lisp/${PACKAGE}
 
 # Install-info-altdir does not actually exist.
 # Maybe somebody will write it.
@@ -41,9 +42,15 @@ fi
 
 install -m 755 -d ${ELCDIR}
 cd ${ELDIR}
-FILES=*.el
-cp ${FILES} ${ELCDIR}/
+FILES=$(echo *.el)
 cd ${ELCDIR}
+ln -sf ${ELRELDIR}/*.el .
+
+# do not compile bbdb-pkg.el
+FILES="$(echo "$FILES" | sed 's:bbdb-pkg[.]el::')"
+
+# do not compile bbdb-site.el
+FILES="$(echo "$FILES" | sed 's:bbdb-site[.]el::')"
 
 # Check if vm is installed for this flavour.
 # If not, do not install or compile bbdb-vm.
@@ -54,9 +61,11 @@ if test \! -d ../vm; then
 fi
 
 cat << EOF > path.el
-(setq load-path (cons "." load-path) byte-compile-warnings nil)
+(debian-pkg-add-load-path-item ".")
+(setq byte-compile-warnings nil)
 EOF
+echo invoking: ${FLAVOR} ${FLAGS} ${FILES}
 ${FLAVOR} ${FLAGS} ${FILES}
-rm -f *.el path.el
+rm -f path.el
 
 exit 0

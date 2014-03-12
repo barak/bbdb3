@@ -29,6 +29,3 @@ override_dh_auto_install:
 	-rm --verbose debian/bbdb3/usr/share/doc/bbdb3/ChangeLog
 	@echo copy of GPLv3 is not needed due to pointer in .../copyright
 	-rm --verbose debian/bbdb3/usr/share/doc/bbdb3/COPYING
-
-override_dh_installchangelogs:
-	dh_installchangelogs ChangeLog
