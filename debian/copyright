@@ -1,42 +1,121 @@
-This work was packaged for Debian by:
+Format: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: bbdb
+Source: http://download.savannah.gnu.org/releases/bbdb/
+	git://git.savannah.nongnu.org/bbdb.git
+	http://savannah.nongnu.org/projects/bbdb/
 
-    Barak A. Pearlmutter <bap@debian.org> on Thu, 10 Mar 2011 09:04:46 +0000
+Files: *
+Copyright: 2010-2014 Roland Winkler
+ Many people have contributed code included in BBDB.
+  Abhi Yerra  <abhi@berkeley.edu>
+  Adam C. Finnefrock  <adam@bigbro.biophys.cornell.edu>
+  Alex Schroeder  <alex@gnu.org>
+  Albert L. Ting <alt@artisan.com>
+  Barak A. Pearlmutter <barak@cs.nuim.ie>
+  Robert Widhopf-Fenk <bbdb@robf.de>
+  Boris Goldowsky <boris@gnu.ai.mit.edu>: bbdb-print.el
+  David Carlton <carlton@math.mit.edu>
+  Christopher Kline <ckline@media.mit.edu>
+  Colin Rafferty  <colin@xemacs.org>
+  Soren Dayton <csdayton@cs.uchicago.edu>
+  Didier Verna <didier@xemacs.org>
+  Brian Edmonds  <edmonds@cs.ubc.ca>
+  Christian Egli <christian.egli@sbs.ch>
+  Dave Love  <fx@gnu.org>
+  Greg Troxel <gdt@ir.bbn.com>
+  Gijs Hillenius <gijs@hillenius.com>
+  Dirk Grunwald <grunwald@cs.colorado.edu>: bbdb-print.el
+  Hrvoje Niksic <hniksic@srce.hr>
+  Ivan Kanis <ivan.kanis@googlemail.com>: bbdb-ispell
+  Jack Repenning <jackr@dblues.wpd.sgi.com>: bbdb-mhe.el
+  Simon Josefsson  <jas@extundo.com>
+  Jeff Bigler  <jcb@mit.edu>
+  Jeff Mincy  <jeff@delphioutpost.com>
+  Jim Blandy <jimb@codesourcery.com>
+  Jim Blandy  <jimb@redhat.com>
+  Jochen Küpper  <jochen@fhi-berlin.mpg.de>
+  John Heidemann <johnh@isi.edu>: bbdb-snarf.el
+  Jamie Zawinski <jwz@netscape.com>
+  Kees de Bruin <kees_de_bruin@tasking.nl>
+  Karl Fogel <kfogel@red-bean.com>
+  Fritz Knabe <knabe@ecrc.de>:  bbdb-mhe.el
+  Kousik Nandy <kousik.nandy@gmail.com>
+  Carsten Leonhardt  <leo@arioch.oche.de>
+  Luigi Semenzato <luigi@paris.cs.berkeley.edu>: bbdb-print.el
+  Marco Walther  <Marco.Walther@mch.sni.de>
+  Stefan Monnier <monnier@iro.umontreal.ca>
+  Jean-Yves Perrier  <perrier@nagra-kudelski.ch>
+  Jens-Ulrik Holger Petersen <petersen@kurims.kyoto-u.ac.jp>
+  Philip Hudson <phil.hudson@iname.com>
+  Leo Liu  <sdl.web@gmail.com>
+  Sam Steingold  <sds@gnu.org>
+  Seth Golub  <seth@cs.wustl.edu>
+  Matt Simmons  <simmonmt@acm.org>
+  SL Baur  <steve@altair.xemacs.org>
+  Kevin Davidson <tkld@quadstone.com>: bbdb-pgp.el
+  Todd Kaufmann <toad@cs.cmu.edu>:  bbdb-mhe.el
+  Tom Tromey <tromey@redhat.com>
+  Teodor Zlatanov  <tzz@lifelogs.com>
+  Waider <waider@waider.ie> 
+  Christoph Wedler  <wedler@fmi.uni-passau.de>
+  Roland Winkler  <winkler@gnu.org>
+  Steve Youngs  <youngs@xemacs.org>
+  ShengHuo Zhu  <zsh@cs.rochester.edu>
+License: GPL-3+
 
-It was downloaded from:
+Files: doc/bbdb.texi
+Copyright: 2011-2014 Roland Winkler <winkler@gnu.org>
+License: GFDL-1.3+
 
-    The upstream repository git://git.savannah.nongnu.org/bbdb.git
-
-Upstream Authors:
-
-    Roland Winkler <winkler@gnu.org>
-    Jamie Zawinski <jwz@netscape.com>
-
+Files: tex/*.tex
 Copyright:
+ 1993 Boris Goldowsky
+ Authors: Luigi Semenzato <luigi@paris.cs.berkeley.edu>,
+ 	  Boris Goldowsky <boris@cs.rochester.edu>
+License: GPL-1+
 
-    Copyright (C) 1991, 1992, 1993, 1994 Jamie Zawinski
-    Copyright (C) 2010, 2011 Roland Winkler
+Files: debian/*
+Copyright: 2011-2014 Barak A. Pearlmutter
+License: GPL-3+
 
-License:
+License: GPL-3+
+ This program is free software: you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation, either version 3 of the License, or
+ (at your option) any later version.
+ .
+ This package is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+ .
+ You should have received a copy of the GNU General Public License
+ along with this program. If not, see <http://www.gnu.org/licenses/>.
+ .
+ On Debian systems, the complete text of the GNU General
+ Public License version 3 can be found in "/usr/share/common-licenses/GPL-3".
 
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
+License: GPL-1+
+ This program is free software; you can redistribute it and/or
+ modify it under the terms of the GNU General Public License as
+ published by the Free Software Foundation; either version 1, or
+ (at your option) any later version.
+ .
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ General Public License for more details.
+ .
+ On Debian systems, the complete text of the GNU General
+ Public License version 1 can be found in "/usr/share/common-licenses/GPL-1".
 
-    This package is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program. If not, see <http://www.gnu.org/licenses/>.
-
-On Debian systems, the complete text of the GNU General
-Public License version 3 can be found in "/usr/share/common-licenses/GPL-3".
-
-The Debian packaging is:
-
-    Copyright (C) 2011 Barak A. Pearlmutter <bap@debian.org>
-
-and is licensed under the GPL version 3 or (at your option) any later
-version, see above.
+License: GFDL-1.3+
+ Permission is granted to copy, distribute and/or modify this document
+ under the terms of the GNU Free Documentation License, Version 1.3
+ or any later version published by the Free Software Foundation;
+ with the Invariant Section being ``GNU GENERAL PUBLIC LICENSE,''
+ A copy of the license is included in the section entitled
+ ``GNU Free Documentation License.''
+ .
+ On Debian systems, the complete text of the GNU Free Documentation License
+ version 3.1 can be found in "/usr/share/common-licenses/GFDL-1.3".

@@ -1,0 +1,20 @@
+# The file doc/bbdb.texi is under the GFDL,
+#
+#    with the Invariant Section being ``GNU GENERAL PUBLIC LICENSE,''
+#
+# aka the text of the GPL-3, which is the license of the package
+# proper.  This seems silly since the license must be provided anyway,
+# but does not make the document debian-non-free.  The file
+# doc/bbdb.info is generated automatically from doc/bbdb.texi, and the
+# copyright notice is copied verbatim in debian/copyright.
+
+bbdb3 source: license-problem-gfdl-invariants doc/bbdb.texi
+bbdb3 source: license-problem-gfdl-invariants doc/bbdb.info
+bbdb3 source: license-problem-gfdl-invariants debian/copyright
+
+# The upstream/3.1.1 tag in git and the upstream tarball differ by the
+# accidential exclusion of lisp/makefile-temp from the "make dist"
+# generated tarball.  This file us not used in the debian build, and
+# this should be fixed in the next upstream release.
+
+bbdb3 source: quilt-patch-using-template-description debian-changes
