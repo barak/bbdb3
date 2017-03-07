@@ -83,7 +83,7 @@ See also `bbdb-print-require'."
   "What fields are required for printing a record.
 This is a lisp expression and a record will be printed only if the evaluation
 of this expression yields a non-nil value for this records.
-The symbols name, organization, mail, phone, address, and notes will be set
+The symbols name, organization, mail, phone, address, and xfields will be set
 to appropriate values when this is evaluated; they will be nil if the field
 does not exist or is elided.
 
@@ -437,7 +437,11 @@ The return value is the new CURRENT-LETTER."
         (xfields (bbdb-record-xfields record))
         (bbdb-address-format-list bbdb-print-address-format-list))
 
-    (when (eval bbdb-print-require)
+    (when (eval bbdb-print-require
+		(cl-mapcar
+		 #'cons
+		 (quote (name organization mail phone address xfields))
+		 (list   name organization mail phone address xfields)))
       ;; Insert section header, if neccessary.
       (if (or (eq current-letter t)
               (not (string-equal first-letter current-letter)))
