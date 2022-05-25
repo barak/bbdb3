@@ -1,3 +1,10 @@
+bbdb3 (3.2.2b-1) unstable; urgency=medium
+
+  * Upstream bug fix release
+  * Bump policy
+
+ -- Barak A. Pearlmutter <bap@debian.org>  Wed, 25 May 2022 14:39:12 +0100
+
 bbdb3 (3.2.2a-1) unstable; urgency=medium
 
   * Upstream bug fix release
