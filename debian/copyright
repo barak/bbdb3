@@ -5,7 +5,7 @@ Source: http://download.savannah.gnu.org/releases/bbdb/
         http://savannah.nongnu.org/projects/bbdb/
 
 Files: *
-Copyright: 2010-2014 Roland Winkler
+Copyright: 2010-2022 Roland Winkler
  Many people have contributed code included in BBDB.
   Abhi Yerra  <abhi@berkeley.edu>
   Adam C. Finnefrock  <adam@bigbro.biophys.cornell.edu>
@@ -64,11 +64,11 @@ Copyright: 2010-2014 Roland Winkler
 License: GPL-3+
 
 Files: doc/bbdb.texi
-Copyright: 2011-2014 Roland Winkler <winkler@gnu.org>
+Copyright: 2011-2017 Roland Winkler <winkler@gnu.org>
 License: GFDL-1.3+
 
 Files: debian/*
-Copyright: 2011-2014 Barak A. Pearlmutter
+Copyright: 2011-2023 Barak A. Pearlmutter
 License: GPL-3+
 
 License: GPL-3+

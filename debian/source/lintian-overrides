@@ -7,4 +7,4 @@
 # but does not make the document debian-non-free.  The file
 # doc/bbdb.info is generated automatically from doc/bbdb.texi, and the
 # copyright notice is copied verbatim in debian/copyright.
-bbdb3 source: license-problem-gfdl-invariants * invariant part is: with the invariant section being gnu general public license
+bbdb3 source: license-problem-gfdl-invariants * with the invariant section being gnu general public license *
