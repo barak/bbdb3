@@ -1,7 +1,7 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: bbdb
 Source: http://download.savannah.gnu.org/releases/bbdb/
-        git://git.savannah.nongnu.org/bbdb.git
+        https://git.savannah.gnu.org/git/bbdb.git
         http://savannah.nongnu.org/projects/bbdb/
 
 Files: *
