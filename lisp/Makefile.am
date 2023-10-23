@@ -1,6 +1,6 @@
 # lisp/Makefile.am for BBDB
 #
-# Copyright (C) 2010-2022 Roland Winkler <winkler@gnu.org>
+# Copyright (C) 2010-2023 Roland Winkler <winkler@gnu.org>
 
 # Author: Roland Winkler <winkler@gnu.org>
 #  	  Christian Egli <christian.egli@sbs.ch>
@@ -58,6 +58,12 @@ if WL
 dist_lisp_LISP += bbdb-wl.el
 # We use the Automake variable AM_ELCFLAGS to include the WL lisp directory
 # in the Emacs load path when compiling BBDB with WL support.
+endif
+
+if NOTMUCH
+dist_lisp_LISP += bbdb-notmuch.el
+# We use the Automake variable AM_ELCFLAGS to include the Notmuch lisp directory
+# in the Emacs load path when compiling BBDB with Notmuch support.
 endif
 
 lisp_DATA = bbdb-loaddefs.el

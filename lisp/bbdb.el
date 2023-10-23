@@ -1,9 +1,9 @@
 ;;; bbdb.el --- Big Brother DataBase -*- lexical-binding: t -*-
 
-;; Copyright (C) 2010-2022  Free Software Foundation, Inc.
+;; Copyright (C) 2010-2023  Free Software Foundation, Inc.
 
 ;; Maintainer: Roland Winkler <winkler@gnu.org>
-;; Version: 3.2.2b
+;; Version: 3.2.2d
 ;; Package-Requires: ((emacs "24") (cl-lib "0.5"))
 
 ;; This file is part of the Insidious Big Brother Database (aka BBDB),
@@ -909,7 +909,8 @@ The strings HEADER belong to CLASS.
 The most important HEADERs should appear first.
 If `bbdb-message-all-addresses' is nil, use only the first matching header."
   :group 'bbdb-mua
-  :type 'list)
+  :type '(repeat (cons (symbol :tag "Class")
+                       (repeat (string :tag "Header")))))
 
 (defcustom bbdb-message-all-addresses nil
   "If t `bbdb-update-records' returns all mail addresses of a message.
@@ -1706,6 +1707,7 @@ See also `bbdb-silent'.")
 (declare-function bbdb-insinuate-mail "bbdb-message" ())
 (declare-function bbdb-insinuate-message "bbdb-message" ())
 (declare-function bbdb-insinuate-mu4e "bbdb-m4e" ())
+(declare-function bbdb-insinuate-notmuch "bbdb-notmuch" ())
 (declare-function bbdb-insinuate-sc "bbdb-sc" ())
 (declare-function bbdb-pgp "bbdb-pgp" ())
 (declare-function bbdb-insinuate-wl "bbdb-wl" ())
@@ -1731,8 +1733,9 @@ See also `bbdb-silent'.")
      ,(lambda () (add-hook 'message-setup-hook #'bbdb-insinuate-message)))
     (mu4e                       ; the mu4e user agent
      ,(lambda () (add-hook 'mu4e-main-mode-hook #'bbdb-insinuate-mu4e)))
-
-    (sc                         ; supercite
+    (notmuch                    ; the notmuch user agent
+     ,(lambda () (add-hook 'notmuch-hello-mode-hook #'bbdb-insinuate-notmuch)))
+    (sc                                 ; supercite
      ,(lambda () (add-hook 'sc-load-hook #'bbdb-insinuate-sc)))
     (anniv                      ; anniversaries
      ,(lambda () (add-hook 'diary-list-entries-hook #'bbdb-anniv-diary-entries)))
@@ -4043,7 +4046,7 @@ FIELD-LIST is the list of actually displayed FIELDS."
                     `(xfields ,xfield)))))))
     ;; delete the trailing "; "
     (if (looking-back "; " nil)
-        (backward-delete-char 2))
+        (delete-char -2))
     (insert "\n")))
 
 (defun bbdb-display-record-multi-line (record layout field-list)
@@ -4815,6 +4818,7 @@ mail/news readers, composers, and miscellaneous packages:
   gnus       Gnus mail/news reader.
   mh-e       MH-E mail reader.
   mu4e       Mu4e mail reader.
+  notmuch    Notmuch mail reader.
   rmail      Rmail mail reader.
   vm         VM mail reader.
   mail       Mail (M-x mail).
