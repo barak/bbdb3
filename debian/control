@@ -3,7 +3,10 @@ Section: mail
 Priority: optional
 Maintainer: Barak A. Pearlmutter <bap@debian.org>
 Build-Depends: debhelper-compat (= 13),
-	       emacs | emacs26-nox | emacs26 | emacs25-nox | emacs25 | emacs24-nox | emacs24
+	       emacs,
+	       mu4e,
+	       wl,
+	       elpa-notmuch,
 Standards-Version: 4.6.2
 Rules-Requires-Root: no
 Homepage: https://savannah.nongnu.org/projects/bbdb/
@@ -12,9 +15,9 @@ Vcs-Browser: https://salsa.debian.org/debian/bbdb3
 
 Package: bbdb3
 Architecture: all
-Depends: ${shlibs:Depends}, ${misc:Depends}
-Recommends: emacs | emacs26 | emacs25 | emacs24 | emacs-snapshot | emacsen
-Enhances: wl, wl-beta, mu4e, vm
+Depends: ${misc:Depends}
+Recommends: emacs
+Enhances: wl, wl-beta, mu4e, vm, elpa-notmuch
 Replaces: bbdb
 Provides: bbdb
 Breaks: bbdb (<< 3)
@@ -23,4 +26,4 @@ Description: Reboot of the BBDB Insidious Big Brother Database for Emacs
  Emacs.  It provides an address book for email and snail mail
  addresses, phone numbers and the like.  It can be linked with various
  Emacs mail clients (Message and Mail mode, Rmail, Gnus, MH-E, Mu4e,
- VM, and Wanderlust).  BBDB is fully customizable.
+ VM, Wanderlust, and notmuch).  BBDB is fully customizable.
