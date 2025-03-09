@@ -1,17 +1,18 @@
 Source: bbdb3
 Section: mail
 Priority: optional
-Maintainer: Barak A. Pearlmutter <bap@debian.org>
+Maintainer: Debian Emacsen team <debian-emacsen@lists.debian.org>
+Uploaders: Barak A. Pearlmutter <bap@debian.org>
 Build-Depends: debhelper-compat (= 13),
 	       emacs,
 	       mu4e,
 	       wl,
 	       elpa-notmuch,
-Standards-Version: 4.6.2
+Standards-Version: 4.7.2
 Rules-Requires-Root: no
-Homepage: https://savannah.nongnu.org/projects/bbdb/
-Vcs-Git: https://salsa.debian.org/debian/bbdb3.git
-Vcs-Browser: https://salsa.debian.org/debian/bbdb3
+Homepage: https://savannah.gnu.org/projects/bbdb/
+Vcs-Git: https://salsa.debian.org/emacsen-team/bbdb3.git
+Vcs-Browser: https://salsa.debian.org/emacsen-team/bbdb3
 
 Package: bbdb3
 Architecture: all

@@ -1,3 +1,16 @@
+bbdb3 (3.2.2d-3) UNRELEASED; urgency=medium
+
+  * Swizzle repositories
+    - upstream from https://git.savannah.nongnu.org/git/bbdb.git
+      to https://git.savannah.gnu.org/git/bbdb.git
+    - debian packaging from https://salsa.debian.org/debian/bbdb3
+      to https://salsa.debian.org/emacsen-common/bbdb3
+  * Swizzle upstream homepage from nongnu.org to gnu.org
+  * Update maintainer to Debian Emacsen Team
+  * Bump standards version to 4.7.2, no changes required
+
+ -- Barak A. Pearlmutter <bap@debian.org>  Sun, 09 Mar 2025 20:20:02 +0000
+
 bbdb3 (3.2.2d-2) unstable; urgency=medium
 
   * Merge patch to guard compile-time loading of notmuch (closes: #1056381)
