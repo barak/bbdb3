@@ -1,6 +1,5 @@
 Source: bbdb3
 Section: mail
-Priority: optional
 Maintainer: Debian Emacsen team <debian-emacsen@lists.debian.org>
 Uploaders: Barak A. Pearlmutter <bap@debian.org>
 Build-Depends: debhelper-compat (= 13),
@@ -8,8 +7,7 @@ Build-Depends: debhelper-compat (= 13),
 	       mu4e,
 	       wl,
 	       elpa-notmuch,
-Standards-Version: 4.7.2
-Rules-Requires-Root: no
+Standards-Version: 4.7.3
 Homepage: https://savannah.gnu.org/projects/bbdb/
 Vcs-Git: https://salsa.debian.org/emacsen-team/bbdb3.git
 Vcs-Browser: https://salsa.debian.org/emacsen-team/bbdb3
